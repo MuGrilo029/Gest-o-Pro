@@ -413,10 +413,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (legacyMode || !activeStoreId) throw new Error('Aplique a migração multi-loja para personalizar a cor.');
     const clean = hex ? normalizeHex(hex) : null;
     if (hex && !clean) throw new Error('Cor inválida. Use o formato #rrggbb.');
-    const { error } = await supabase.from('store_modules').upsert(
-      { store_id: activeStoreId, module_key: BRAND_ROW_KEY, enabled: false, config: { color: clean }, updated_at: new Date().toISOString() },
-      { onConflict: 'store_id,module_key' },
-    );
+    // A RPC valida dono/gerente/admin no banco (a tabela store_modules só aceita escrita do admin).
+    const { error } = await supabase.rpc('set_store_brand', { p_store_id: activeStoreId, p_color: clean });
     if (error) throw new Error(error.message);
     setBrandColorState(clean);
   }, [legacyMode, activeStoreId]);

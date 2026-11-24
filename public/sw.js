@@ -1,11 +1,11 @@
 // Service Worker para Web Push Notifications
 // Instalação e ativação do SW
 
-const CACHE_NAME = 'gestao-pro-v1';
+const CACHE_NAME = 'gestao-pro-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/favicon.ico'
+  '/favicon.svg'
 ];
 
 // Instalar Service Worker
@@ -77,12 +77,12 @@ self.addEventListener('push', (event) => {
         {
           action: 'open',
           title: 'Abrir',
-          icon: '/favicon.ico'
+          icon: '/app-icon.png'
         },
         {
           action: 'close',
           title: 'Fechar',
-          icon: '/favicon.ico'
+          icon: '/app-icon.png'
         }
       ]
     })

@@ -370,7 +370,9 @@ export const Sales: React.FC = () => {
   const filteredCustomers = useMemo(() => customerSearch ? (customers || []).filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase()) || c.cpfCnpj?.includes(customerSearch) || c.phone?.includes(customerSearch)).slice(0, 5) : [], [customers, customerSearch]);
 
   const subtotal = cart.reduce((acc, item) => acc + (item.price * item.cartQty), 0);
-  const total = Math.max(0, subtotal - discount);
+  // Desconto sempre entre 0 e o subtotal (valor negativo aumentaria o total).
+  const effectiveDiscount = Math.min(Math.max(0, Number(discount) || 0), subtotal);
+  const total = Math.max(0, subtotal - effectiveDiscount);
   const remainingAmount = Math.max(0, total - downPayment);
 
   const calculateFeeAmount = (amount: number, method: string, inst: number) => {
@@ -482,7 +484,7 @@ export const Sales: React.FC = () => {
         };
       }),
       total,
-      discount,
+      discount: effectiveDiscount,
       paymentMethod,
       downPaymentMethod: isPartialPayment ? downPaymentMethod : undefined,
       remainingPaymentMethod: isPartialPayment ? remainingPaymentMethod : undefined,
@@ -613,7 +615,7 @@ export const Sales: React.FC = () => {
       </Modal>
 
       {step === 'CONFIRM' ? (
-        <ConfirmationView customer={{ name: customerName, phone: customerPhone, address: customerAddress, doc: customerDoc }} items={cart} payment={{ method: paymentMethod, downMethod: downPaymentMethod, remainingMethod: remainingPaymentMethod, type: isPartialPayment ? 'PARTIAL' : 'FULL', discount, downPayment, total, remainingAmount }} deliveryType={deliveryType} observations={observations} isSuccess={isSuccess} isLoading={isLoading} onBack={() => setStep('CHECKOUT')} onConfirm={processSale} onReset={resetSalesFlow} />
+        <ConfirmationView customer={{ name: customerName, phone: customerPhone, address: customerAddress, doc: customerDoc }} items={cart} payment={{ method: paymentMethod, downMethod: downPaymentMethod, remainingMethod: remainingPaymentMethod, type: isPartialPayment ? 'PARTIAL' : 'FULL', discount: effectiveDiscount, downPayment, total, remainingAmount }} deliveryType={deliveryType} observations={observations} isSuccess={isSuccess} isLoading={isLoading} onBack={() => setStep('CHECKOUT')} onConfirm={processSale} onReset={resetSalesFlow} />
       ) : step === 'CHECKOUT' ? (
         <div className="max-w-5xl mx-auto space-y-6 pb-20 animate-fade-in text-black dark:text-white">
           <div className="flex justify-between items-center">
@@ -739,7 +741,7 @@ export const Sales: React.FC = () => {
                       )}
                     </div>
                   )}
-                  <Input label="Desconto" type="number" value={discount} onChange={e => setDiscount(Number(e.target.value))} />
+                  <Input label="Desconto" type="number" min={0} max={subtotal} value={discount} onChange={e => setDiscount(Math.min(Math.max(0, Number(e.target.value) || 0), subtotal))} />
                   <textarea className="w-full p-2 border rounded h-24" placeholder="Obs..." value={observations} onChange={e => setObservations(e.target.value)} />
                 </div>
               </Card>
@@ -914,7 +916,7 @@ export const Sales: React.FC = () => {
                     <Select label="Pagamento" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
                       {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
                     </Select>
-                    <Input label="Desconto (R$)" type="number" min={0} value={discount} onChange={e => setDiscount(Math.max(0, Number(e.target.value)))} />
+                    <Input label="Desconto (R$)" type="number" min={0} max={subtotal} value={discount} onChange={e => setDiscount(Math.min(Math.max(0, Number(e.target.value) || 0), subtotal))} />
                   </div>
                   {paymentMethod === 'Cartão Crédito' && (
                     <Select label="Parcelas" value={installments} onChange={e => setInstallments(Number(e.target.value))}>
@@ -923,7 +925,7 @@ export const Sales: React.FC = () => {
                   )}
                 </>
               )}
-              {discount > 0 && <div className="flex justify-between text-sm text-gray-500"><span>Subtotal</span><span>R$ {subtotal.toFixed(2)}</span></div>}
+              {effectiveDiscount > 0 && <div className="flex justify-between text-sm text-gray-500"><span>Subtotal</span><span>R$ {subtotal.toFixed(2)}</span></div>}
               <div className="flex justify-between font-bold text-xl"><span>Total</span><span>R$ {(editingSaleId ? subtotal : total).toFixed(2)}</span></div>
               {editingSaleId ? (
                 <Button className="w-full h-12" disabled={cart.length === 0} onClick={() => startFinalize('FULL')}>Prosseguir <ArrowRight className="ml-2" /></Button>

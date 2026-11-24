@@ -284,8 +284,8 @@ export const ConfirmDialog: React.FC<{
         <h3 className="text-lg font-bold text-wine-900 dark:text-white mb-2">{title}</h3>
         <p className="text-sm text-wine-700 dark:text-slate-300 whitespace-pre-line mb-6">{message}</p>
         <div className="flex justify-end gap-2">
-          {cancelLabel !== null && <Button type="button" variant="outline" onClick={onCancel}>{cancelLabel}</Button>}
-          <Button type="button" variant={danger ? 'danger' : 'primary'} autoFocus onClick={onConfirm}>{confirmLabel}</Button>
+          {cancelLabel !== null && <Button type="button" variant="outline" autoFocus={!!danger} onClick={onCancel}>{cancelLabel}</Button>}
+          <Button type="button" variant={danger ? 'danger' : 'primary'} autoFocus={!danger} onClick={onConfirm}>{confirmLabel}</Button>
         </div>
       </div>
     </div>
