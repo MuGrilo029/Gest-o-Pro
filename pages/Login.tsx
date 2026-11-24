@@ -3,12 +3,16 @@ import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Lock, Mail, Loader2, AlertCircle } from 'lucide-react';
 
+/**
+ * Tela de acesso. Não há cadastro público: as contas são criadas pelo
+ * administrador da plataforma (donos e gerentes) ou pelo dono/gerente da
+ * loja (vendedores), com e-mail e senha.
+ */
 export const Login: React.FC = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [isSignUp, setIsSignUp] = useState(false);
 
     const handleAuth = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -16,19 +20,11 @@ export const Login: React.FC = () => {
         setError(null);
 
         try {
-            if (isSignUp) {
-                const { error } = await supabase.auth.signUp({
-                    email,
-                    password,
-                });
-                if (error) throw error;
-                alert('Verifique seu email para confirmar o cadastro!');
-            } else {
-                const { error } = await supabase.auth.signInWithPassword({
-                    email,
-                    password,
-                });
-                if (error) throw error;
+            const { error } = await supabase.auth.signInWithPassword({ email, password });
+            if (error) {
+                throw new Error(error.message === 'Invalid login credentials'
+                    ? 'E-mail ou senha incorretos.'
+                    : error.message);
             }
         } catch (err: any) {
             setError(err.message);
@@ -44,12 +40,8 @@ export const Login: React.FC = () => {
                     <div className="w-12 h-12 bg-wine-600 rounded-xl flex items-center justify-center mx-auto mb-4 text-white">
                         <Lock size={24} />
                     </div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                        {isSignUp ? 'Criar Conta' : 'COM STILLO Login'}
-                    </h1>
-                    <p className="text-gray-500 dark:text-gray-400 mt-2">
-                        {isSignUp ? 'Preencha os dados para começar' : 'Entre com suas credenciais para acessar'}
-                    </p>
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Entrar</h1>
+                    <p className="text-gray-500 dark:text-gray-400 mt-2">Use o e-mail e a senha que você recebeu</p>
                 </div>
 
                 {error && (
@@ -70,6 +62,7 @@ export const Login: React.FC = () => {
                                 onChange={(e) => setEmail(e.target.value)}
                                 className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-wine-500 focus:border-transparent dark:bg-slate-700 dark:text-white transition-all"
                                 placeholder="seu@email.com"
+                                autoComplete="username"
                                 required
                             />
                         </div>
@@ -85,6 +78,7 @@ export const Login: React.FC = () => {
                                 onChange={(e) => setPassword(e.target.value)}
                                 className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-wine-500 focus:border-transparent dark:bg-slate-700 dark:text-white transition-all"
                                 placeholder="••••••••"
+                                autoComplete="current-password"
                                 required
                             />
                         </div>
@@ -95,22 +89,13 @@ export const Login: React.FC = () => {
                         disabled={loading}
                         className="w-full bg-wine-700 hover:bg-wine-800 text-white font-medium py-2 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {loading ? (
-                            <Loader2 size={20} className="animate-spin" />
-                        ) : (
-                            isSignUp ? 'Cadastrar' : 'Entrar'
-                        )}
+                        {loading ? <Loader2 size={20} className="animate-spin" /> : 'Entrar'}
                     </button>
                 </form>
 
-                <div className="mt-6 text-center">
-                    <button
-                        onClick={() => setIsSignUp(!isSignUp)}
-                        className="text-sm text-wine-600 dark:text-wine-400 hover:underline"
-                    >
-                        {isSignUp ? 'Já tem uma conta? Entre' : 'Não tem conta? Cadastre-se'}
-                    </button>
-                </div>
+                <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                    Não tem acesso? Fale com o responsável pela sua loja.
+                </p>
             </div>
         </div>
     );

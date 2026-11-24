@@ -188,6 +188,7 @@ export const MODULES: ModuleDefinition[] = [
     defaultEnabled: true,
     views: [
       { view: 'SETTINGS', label: 'Configurações', inMenu: true },
+      { view: 'TEAM', label: 'Equipe', inMenu: true },
       { view: 'STORE_ADMIN', label: 'Administração (Lojas)', inMenu: true },
     ],
   },
@@ -214,7 +215,7 @@ export const ROLE_LABELS: Record<StoreRole, string> = {
 export const PLATFORM_ADMIN_VIEWS: AppView[] = ['STORE_ADMIN'];
 
 /** Telas que só dono/gerente acessam, mesmo que o vendedor tenha permissão marcada. */
-export const MANAGER_ONLY_VIEWS: AppView[] = ['SETTINGS', 'STORE_ADMIN', 'PAYABLES', 'RECEIVABLES', 'BOLETOS', 'REPORTS'];
+export const MANAGER_ONLY_VIEWS: AppView[] = ['SETTINGS', 'STORE_ADMIN', 'TEAM', 'PAYABLES', 'RECEIVABLES', 'BOLETOS', 'REPORTS'];
 
 export const getModule = (key: ModuleKey) => MODULES.find(m => m.key === key)!;
 

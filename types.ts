@@ -281,7 +281,8 @@ export type AppView =
   | 'IMPORT_EXPORT'
   | 'QUOTES'
   | 'STOCK_LOGS'
-  | 'STORE_ADMIN';
+  | 'STORE_ADMIN'
+  | 'TEAM';
 
 export interface StockMovement {
   id: string;

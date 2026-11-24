@@ -20,6 +20,7 @@ import { StockEntries } from './pages/StockEntries';
 import { Modules } from './pages/Modules';
 import { Quotes } from './pages/Quotes';
 import { StoreAdmin } from './pages/StoreAdmin';
+import { Team } from './pages/Team';
 import { NoStore } from './pages/NoStore';
 import { Login } from './pages/Login';
 import { MODULES, MODULE_CATEGORIES, ModuleCategory, ROLE_LABELS } from './lib/modules';
@@ -72,6 +73,7 @@ const VIEW_ICONS: Partial<Record<AppView, React.ReactNode>> = {
   DELIVERIES: <Truck size={20} />,
   SETTINGS: <Settings size={20} />,
   STORE_ADMIN: <StoreIcon size={20} />,
+  TEAM: <Users size={20} />,
 };
 
 const NotificationContainer = () => {
@@ -238,6 +240,7 @@ const AppContent: React.FC = () => {
       case 'DELIVERIES': return <Deliveries />;
       case 'SETTINGS': return <SettingsPage />;
       case 'STORE_ADMIN': return <StoreAdmin />;
+      case 'TEAM': return <Team />;
       case 'SUPPLIERS': return <Suppliers />;
       case 'REPORTS': return <Reports />;
       case 'QUOTES': return <Quotes />;

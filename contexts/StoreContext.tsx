@@ -49,7 +49,9 @@ interface StoreContextValue {
   createStore: (name: string, enabledModules?: ModuleKey[]) => Promise<string | null>;
   setModuleEnabled: (key: ModuleKey, enabled: boolean) => Promise<void>;
   listMembers: () => Promise<StoreMember[]>;
-  addMember: (email: string, role: StoreRole, permissions: AppView[]) => Promise<void>;
+  /** Cria a conta (e-mail + senha) e coloca na loja ativa. Se o e-mail já tiver conta, só adiciona. */
+  createMember: (input: { email: string; name: string; password: string; role: StoreRole; permissions: AppView[] }) => Promise<{ existingAccount: boolean }>;
+  setMemberPassword: (userId: string, password: string) => Promise<void>;
   updateMember: (userId: string, role: StoreRole, permissions: AppView[]) => Promise<void>;
   removeMember: (userId: string) => Promise<void>;
   reload: () => Promise<void>;
@@ -250,12 +252,38 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }));
   }, [legacyMode, activeStoreId]);
 
-  const addMember = useCallback(async (email: string, memberRole: StoreRole, permissions: AppView[]) => {
+  /** Chama a Edge Function manage-users e devolve a mensagem de erro dela, se houver. */
+  const callManageUsers = async (body: Record<string, unknown>) => {
+    const { data, error } = await supabase.functions.invoke('manage-users', { body });
+    if (error) {
+      let message = error.message;
+      try {
+        const payload = await (error as any).context?.json?.();
+        if (payload?.error) message = payload.error;
+      } catch { /* resposta sem JSON */ }
+      throw new Error(message);
+    }
+    if (data?.error) throw new Error(data.error);
+    return data;
+  };
+
+  const createMember = useCallback(async (input: { email: string; name: string; password: string; role: StoreRole; permissions: AppView[] }) => {
     const storeId = requireStore();
-    const { error } = await supabase.rpc('add_store_member', {
-      p_store: storeId, p_email: email, p_role: memberRole, p_permissions: permissions,
+    const data = await callManageUsers({
+      action: 'create_member',
+      store_id: storeId,
+      email: input.email,
+      name: input.name,
+      password: input.password,
+      role: input.role,
+      permissions: input.role === 'SELLER' ? input.permissions : [],
     });
-    if (error) throw new Error(error.message);
+    return { existingAccount: !!data?.existing_account };
+  }, [legacyMode, activeStoreId]);
+
+  const setMemberPassword = useCallback(async (userId: string, password: string) => {
+    const storeId = requireStore();
+    await callManageUsers({ action: 'set_password', store_id: storeId, user_id: userId, password });
   }, [legacyMode, activeStoreId]);
 
   const updateMember = useCallback(async (userId: string, memberRole: StoreRole, permissions: AppView[]) => {
@@ -290,7 +318,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       createStore,
       setModuleEnabled,
       listMembers,
-      addMember,
+      createMember,
+      setMemberPassword,
       updateMember,
       removeMember,
       reload,
