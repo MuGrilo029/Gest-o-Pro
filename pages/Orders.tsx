@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useAppStore } from '../store';
-import { Card, Button, Badge, Modal, Input } from '../components/UI';
+import { Card, Button, Badge, Modal, Input, confirmDialog, alertDialog } from '../components/UI';
 import {
     Package,
     Clock,
@@ -158,8 +158,8 @@ export const Orders: React.FC = () => {
         }
     };
 
-    const handleDeleteGroup = (group: OrderGroup) => {
-        if (confirm('Tem certeza que deseja remover TODAS as encomendas desta venda?')) {
+    const handleDeleteGroup = async (group: OrderGroup) => {
+        if (await confirmDialog('Tem certeza que deseja remover TODAS as encomendas desta venda?')) {
             group.items.forEach(order => {
                 deleteOrder(order.id);
             });
@@ -169,7 +169,7 @@ export const Orders: React.FC = () => {
 
     const handleCreateManualOrder = async () => {
         if (!manualForm.customerName || !manualForm.productName) {
-            alert('Preencha o nome do cliente e o produto.');
+            alertDialog('Preencha o nome do cliente e o produto.');
             return;
         }
 
@@ -397,8 +397,8 @@ export const Orders: React.FC = () => {
                                             <span className="text-[10px] font-bold text-center">Chegou</span>
                                         </button>
                                         <button
-                                            onClick={() => {
-                                                if (confirm('Tem certeza que deseja remover ESTE item da encomenda?')) {
+                                            onClick={async () => {
+                                                if (await confirmDialog('Tem certeza que deseja remover ESTE item da encomenda?')) {
                                                     deleteOrder(item.id);
                                                     if (activeGroup.items.length === 1) setShowStatusModal(false);
                                                 }

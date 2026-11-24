@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { useAppStore } from '../store';
-import { Card, Button, Modal, Input, Badge } from '../components/UI';
+import { Card, Button, Modal, Input, Badge, confirmDialog } from '../components/UI';
 import { Truck, MapPin, Phone, Clock, Calendar, CheckCircle, Navigation, Edit2, MessageCircle, Printer, FileText, Trash2, Kanban, RotateCcw } from 'lucide-react';
 import { Delivery } from '../types';
 import { formatISO } from '../lib/utils';
@@ -209,8 +209,8 @@ const DeliveryCard: React.FC<{ delivery: Delivery; onEdit: (d: Delivery) => void
             <Edit2 size={18} />
           </button>
           <button
-            onClick={() => {
-              if (confirm('Deseja excluir esta entrega?')) {
+            onClick={async () => {
+              if (await confirmDialog('Deseja excluir esta entrega?')) {
                 deleteDelivery(delivery.id);
               }
             }}

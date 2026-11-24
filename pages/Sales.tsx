@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../store';
 import { useStore } from '../contexts/StoreContext';
-import { Card, Button, Input, Select, Badge, formatCpfCnpj, formatPhone, Modal } from '../components/UI';
+import { Card, Button, Input, Select, Badge, formatCpfCnpj, formatPhone, Modal, alertDialog } from '../components/UI';
 import {
   ShoppingCart, Trash2, Plus, Minus, Check, Search, User, MapPin, Phone, FileText, Send,
   Building, Package, CreditCard, DollarSign, X, UserCheck, Truck, Store, Printer,
@@ -336,10 +336,10 @@ export const Sales: React.FC = () => {
   const [customItemForm, setCustomItemForm] = useState({ name: '', price: '', observations: '' });
 
   const handleAddCustomItem = () => {
-    if (!customItemForm.name || !customItemForm.price) return alert('Nome e Valor são obrigatórios');
+    if (!customItemForm.name || !customItemForm.price) return alertDialog('Nome e Valor são obrigatórios');
 
     const price = parseFloat(customItemForm.price.toString().replace(',', '.'));
-    if (isNaN(price) || price <= 0) return alert('Valor inválido');
+    if (isNaN(price) || price <= 0) return alertDialog('Valor inválido');
 
     const newItem: CartItem = {
       id: getUUID(),
@@ -421,7 +421,7 @@ export const Sales: React.FC = () => {
   };
 
   const goToConfirmation = () => {
-    if (!customerName || (deliveryType === 'DELIVERY' && !customerAddress)) return alert('Preencha os dados do cliente.');
+    if (!customerName || (deliveryType === 'DELIVERY' && !customerAddress)) return alertDialog('Preencha os dados do cliente.');
     setStep('CONFIRM');
   };
 
@@ -516,7 +516,7 @@ export const Sales: React.FC = () => {
   };
 
   const handleSaveNewCustomer = () => {
-    if (!newCustomerForm.name) return alert('Nome é obrigatório');
+    if (!newCustomerForm.name) return alertDialog('Nome é obrigatório');
 
     const newCustomer: Customer = {
       id: getUUID(),
@@ -744,7 +744,7 @@ export const Sales: React.FC = () => {
                   <div className="flex justify-between font-bold text-xl pt-4"><span>Total</span><span>R$ {total.toFixed(2)}</span></div>
                   <Button className="w-full h-14 text-lg font-bold" onClick={() => {
                     if (editingSaleId) {
-                      if (!customerName || (deliveryType === 'DELIVERY' && !customerAddress)) return alert('Preencha os dados do cliente.');
+                      if (!customerName || (deliveryType === 'DELIVERY' && !customerAddress)) return alertDialog('Preencha os dados do cliente.');
                       processSale(cart);
                       setStep('CONFIRM');
                     } else {

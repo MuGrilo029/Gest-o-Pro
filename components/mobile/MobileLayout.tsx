@@ -14,6 +14,7 @@ import {
   Sparkles,
   ShieldCheck,
   ChevronRight,
+  MoreHorizontal,
   X
 } from 'lucide-react';
 import { MobileTab } from './types';
@@ -78,6 +79,11 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({
       id: 'INVENTORY' as MobileTab,
       label: 'Estoque',
       icon: Package
+    },
+    {
+      id: 'MORE' as MobileTab,
+      label: 'Mais',
+      icon: MoreHorizontal
     }
   ];
 

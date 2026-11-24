@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Transaction, TransactionStatus, Product, ProductVariant, Supplier, Sale, SaleItem, Delivery, User, Customer, AppView, CompanySettings, Category, CategoryGroup, ProductionOrder, FurnitureSpecs, Notification, Quote, Order, StockMovement, CardFee } from './types';
 import { supabase } from './lib/supabase';
 import { parseISO, formatISO, formatBrazilDateTime, isSameMonth, getUUID } from './lib/utils';
@@ -220,7 +220,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isInitialized, setIsInitialized] = useState(false);
   const [simulations, setSimulations] = useState<any[]>([]);
 
+  // Identifica a loja cuja carga está valendo; carga de loja anterior é descartada.
+  const loadGeneration = useRef(0);
+
   const refreshData = async (silent = false) => {
+    const generation = loadGeneration.current;
     if (!silent) setIsLoading(true);
     try {
       console.log(`🚀 STORE: Iniciando carregamento de dados${silent ? ' (SILENCIO)' : ''}...`);
@@ -411,6 +415,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         id: f.id, installments: f.installments, percentage: Number(f.percentage) || 0
       }));
 
+      if (generation !== loadGeneration.current) return; // trocou de loja durante a carga
+
       setData((previous: any) => ({
         ...previous,
         products: productsData === null ? previous.products : formattedProducts,
@@ -449,7 +455,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // O RLS do banco devolve apenas os registros da loja ativa.
   useEffect(() => {
     if (storeStatus !== 'ready' || !activeStore) return;
-    // Limpa os dados da loja anterior antes de carregar a nova.
+    // Limpa os dados da loja anterior antes de carregar a nova e invalida cargas em andamento.
+    loadGeneration.current += 1;
+    setIsInitialized(false);
+    setEditingSaleId(null);
+    setPendingSale(null);
     setData((prev: any) => ({
       ...prev,
       transactions: [], products: [], suppliers: [], customers: [], sales: [], deliveries: [],
@@ -648,12 +658,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (changed) setData(newData);
   }, []);
 
+  // Os dados da loja ficam só em memória: não são gravados no navegador, para não
+  // vazar entre lojas/usuários no mesmo computador. Remove cópia antiga, se houver.
   useEffect(() => {
-    // Sync with LocalStorage as backup (or removed if fully migrated)
-    if (isInitialized) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    }
-  }, [data, isInitialized]);
+    localStorage.removeItem(STORAGE_KEY);
+  }, []);
 
   const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
   const [pendingSale, setPendingSale] = useState<Partial<Sale> | null>(null);

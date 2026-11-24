@@ -1,4 +1,4 @@
-export type MobileTab = 'DASHBOARD' | 'POS' | 'HISTORY' | 'INVENTORY';
+export type MobileTab = 'DASHBOARD' | 'POS' | 'HISTORY' | 'INVENTORY' | 'MORE';
 
 export type TimeFilterOption = 'TODAY' | 'WEEK' | 'MONTH' | 'YEAR';
 

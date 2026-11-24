@@ -14,6 +14,19 @@ export default defineConfig(({ mode }) => {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
     },
+    build: {
+      rollupOptions: {
+        output: {
+          // Só o Supabase tem chunk fixo (cache longo). Gráficos, PDF e Excel já ficam fora da
+          // entrada porque as telas que os usam são carregadas sob demanda.
+          manualChunks(id: string) {
+            if (!id.includes('node_modules')) return undefined;
+            if (id.includes('@supabase')) return 'supabase';
+            return undefined;
+          },
+        },
+      },
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

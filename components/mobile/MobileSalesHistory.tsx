@@ -21,8 +21,6 @@ import {
 } from 'lucide-react';
 import { CompanySettings, Sale, Transaction } from '../../types';
 import { SalePrintTemplate } from '../SalePrintTemplate';
-import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
 
 interface MobileSalesHistoryProps {
   sales?: Sale[];
@@ -119,6 +117,8 @@ export const MobileSalesHistory: React.FC<MobileSalesHistoryProps> = ({
     setIsGeneratingPdf(true);
 
     try {
+      // Bibliotecas de PDF carregadas só quando o usuário gera o PDF.
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import('html2canvas'), import('jspdf')]);
       const canvas = await html2canvas(printable, {
         scale: 2,
         backgroundColor: '#ffffff',

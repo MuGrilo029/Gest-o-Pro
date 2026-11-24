@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
-import { Card, Button, Input, Table, Badge, Modal, Select, EmptyState } from '../components/UI';
+import { Card, Button, Input, Table, Badge, Modal, Select, EmptyState, alertDialog } from '../components/UI';
 import { Plus, Trash2, AlertTriangle, DollarSign, Package, TrendingUp, TrendingDown, Upload, Image as ImageIcon, Loader2, Layers } from 'lucide-react';
 import { Product, ProductVariant } from '../types';
 import { supabase } from '../lib/supabase';
@@ -113,11 +113,11 @@ export const Inventory: React.FC = () => {
       const { data } = supabase.storage.from('products').getPublicUrl(filePath);
 
       setFormData(prev => ({ ...prev, image: data.publicUrl }));
-      alert('Imagem enviada com sucesso!');
+      alertDialog('Imagem enviada com sucesso!');
 
     } catch (error: any) {
       console.error('Error uploading image:', error);
-      alert('Erro ao enviar imagem. Verifique se o bucket "products" existe e é público no Supabase.');
+      alertDialog('Erro ao enviar imagem. Verifique se o bucket "products" existe e é público no Supabase.');
     } finally {
       setIsUploading(false);
     }
@@ -681,11 +681,11 @@ export const Inventory: React.FC = () => {
               type="button"
               onClick={async () => {
                 if (stockEntryData.quantity <= 0) {
-                  alert('A quantidade deve ser maior que zero.');
+                  alertDialog('A quantidade deve ser maior que zero.');
                   return;
                 }
                 if (formData.hasVariations && !stockEntryVariantId) {
-                  alert('Selecione a variação que receberá a entrada.');
+                  alertDialog('Selecione a variação que receberá a entrada.');
                   return;
                 }
                 await registerStockEntry(

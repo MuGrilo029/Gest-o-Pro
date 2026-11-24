@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Plus, RefreshCcw, Clock, PauseCircle, PlayCircle, ExternalLink } from 'lucide-react';
-import { Card, Button, Input, Badge, Select } from './UI';
+import { Card, Button, Input, Badge, Select, confirmDialog } from './UI';
 import { useAppStore } from '../store';
 import { ClientRow, SubscriptionStatus, useStore } from '../contexts/StoreContext';
 import { MODULES, ModuleKey } from '../lib/modules';
@@ -280,8 +280,8 @@ export const ClientsPanel: React.FC = () => {
                         </Button>
                       ) : (
                         <Button variant="outline" disabled={busy}
-                          onClick={() => {
-                            if (window.confirm(`Suspender ${c.name}? Ninguém da loja consegue entrar até reativar.`)) {
+                          onClick={async () => {
+                            if (await confirmDialog(`Suspender ${c.name}? Ninguém da loja consegue entrar até reativar.`)) {
                               run(c.storeId, () => adminSetStatus(c.storeId, 'suspended'), `${c.name} suspenso.`);
                             }
                           }}>

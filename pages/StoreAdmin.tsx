@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Boxes, Users, Store, Plus, Lock, AlertTriangle, Briefcase } from "lucide-react";
-import { Card, Button, Input, Badge } from "../components/UI";
+import { Card, Button, Input, Badge, confirmDialog } from '../components/UI';
 import { TeamPanel } from "../components/TeamPanel";
 import { ClientsPanel } from "../components/ClientsPanel";
 import { useAppStore } from "../store";
@@ -31,7 +31,7 @@ export const StoreAdmin: React.FC = () => {
       const affected = dependentsOf(key).filter(k => moduleStates[k]);
       if (affected.length > 0) {
         const names = affected.map(k => getModule(k).name).join(', ');
-        if (!window.confirm(`Desligar ${getModule(key).name} também desliga: ${names}. Continuar?`)) return;
+        if (!await confirmDialog(`Desligar ${getModule(key).name} também desliga: ${names}. Continuar?`)) return;
       }
     }
     setBusyModule(key);

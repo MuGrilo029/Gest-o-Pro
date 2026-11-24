@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useAppStore } from '../store';
 import { Product, Customer, Quote, QuoteItem, FurnitureSpecs, Sale } from '../types';
 import { formatBrazilDateTime, formatCurrency, formatDisplayDate, getUUID } from '../lib/utils';
-import { Card, Button, Input, Select, formatCpfCnpj, formatPhone, Modal } from '../components/UI';
+import { Card, Button, Input, Select, formatCpfCnpj, formatPhone, Modal, confirmDialog, alertDialog } from '../components/UI';
 import { Search, ShoppingCart, Trash, Plus, Minus, ArrowRight, ArrowLeft, Printer, FileText, Check, DollarSign, UserCheck, Calendar, Clock, History, Edit, CheckCircle, Trash2, Info, Upload, Image as ImageIcon, Loader2, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -341,7 +341,7 @@ export const Quotes: React.FC = () => {
     };
 
     const handleSaveNewCustomer = () => {
-        if (!newCustomerForm.name) return alert('Nome é obrigatório');
+        if (!newCustomerForm.name) return alertDialog('Nome é obrigatório');
 
         const newCustomer = {
             id: getUUID(),
@@ -412,8 +412,8 @@ export const Quotes: React.FC = () => {
         }
     };
 
-    const handleConvertToSale = (q: Quote) => {
-        if (confirm(`Converter orçamento ${q.quoteNumber} em Venda ?\nVocê será redirecionado para o PDV para conferir e finalizar.`)) {
+    const handleConvertToSale = async (q: Quote) => {
+        if (await confirmDialog(`Converter orçamento ${q.quoteNumber} em Venda ?\nVocê será redirecionado para o PDV para conferir e finalizar.`)) {
             const saleData: Partial<Sale> = {
                 customerName: q.clientName,
                 customerPhone: q.clientPhone,

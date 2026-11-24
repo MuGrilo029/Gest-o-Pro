@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
-import { Card, Button, Input, Table, Modal, EmptyState, formatCpfCnpj, formatPhone } from '../components/UI';
+import { Card, Button, Input, Table, Modal, EmptyState, PageHeader, formatCpfCnpj, formatPhone } from '../components/UI';
 import { Plus, Trash2, Search, Phone, MapPin, Mail, MessageCircle } from 'lucide-react';
 import { Customer } from '../types';
 import { getUUID } from '../lib/utils';
@@ -60,10 +60,11 @@ export const Customers: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h2 className="text-2xl font-bold text-wine-900 dark:text-white">Gestão de Clientes</h2>
-        <Button onClick={() => handleOpenModal()}><Plus size={18} /> Novo Cliente</Button>
-      </div>
+      <PageHeader
+        title="Gestão de Clientes"
+        subtitle="Cadastro usado nas vendas, orçamentos e entregas."
+        actions={<Button onClick={() => handleOpenModal()}><Plus size={18} /> Novo Cliente</Button>}
+      />
 
       <div className="relative">
         <Search className="absolute left-3 top-2.5 text-wine-300 dark:text-slate-400" size={20} />

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Trash2, Plus, Check, KeyRound } from 'lucide-react';
-import { Card, Button, Input, Select, Badge } from './UI';
+import { Card, Button, Input, Select, Badge, confirmDialog } from './UI';
 import { useAppStore } from '../store';
 import { useStore, StoreMember } from '../contexts/StoreContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -150,7 +150,7 @@ export const TeamPanel: React.FC = () => {
   };
 
   const handleRemove = async (m: StoreMember) => {
-    if (!window.confirm(`Remover ${m.email} desta loja? A pessoa perde o acesso a ela.`)) return;
+    if (!(await confirmDialog(`Remover ${m.email} desta loja? A pessoa perde o acesso a ela.`))) return;
     try {
       await removeMember(m.userId);
       addNotification(`${m.email} removido.`, 'success');

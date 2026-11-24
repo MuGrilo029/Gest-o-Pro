@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
-import { Card, Button, Input, Select, Table, Modal, formatCpfCnpj, formatPhone } from '../components/UI';
+import { Card, Button, Input, Select, Table, Modal, formatCpfCnpj, formatPhone, confirmDialog, alertDialog } from '../components/UI';
 import { Settings as SettingsIcon, Users, Tag, FileText, Building, Trash2, Plus, UserPlus, Briefcase, ShoppingBag, Truck, DollarSign, Edit, CheckSquare, Square, Upload, Image as ImageIcon, Loader2, Palette, FileSpreadsheet, Download, AlertCircle, ArrowRight, Check } from 'lucide-react';
 import { Category, User, CategoryType, UserRole, CategoryGroup, CardFee } from '../types';
 import { supabase } from '../lib/supabase';
@@ -254,7 +254,7 @@ export const Settings: React.FC = () => {
     }
 
     if (!data || data.length === 0) {
-      alert('Sem dados para exportar neste módulo.');
+      alertDialog('Sem dados para exportar neste módulo.');
       return;
     }
 
@@ -272,7 +272,7 @@ export const Settings: React.FC = () => {
   const handleSaveGeneral = (e: React.FormEvent) => {
     e.preventDefault();
     updateCompanySettings(generalForm);
-    alert('Configurações salvas com sucesso!');
+    alertDialog('Configurações salvas com sucesso!');
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -295,11 +295,11 @@ export const Settings: React.FC = () => {
       const { data } = supabase.storage.from('products').getPublicUrl(filePath);
 
       setGeneralForm(prev => ({ ...prev, logo: data.publicUrl }));
-      alert('Logo enviada com sucesso!');
+      alertDialog('Logo enviada com sucesso!');
 
     } catch (error: any) {
       console.error('Error uploading logo:', error);
-      alert('Erro ao enviar logo. Tente novamente.');
+      alertDialog('Erro ao enviar logo. Tente novamente.');
     } finally {
       setIsUploading(false);
     }
@@ -443,8 +443,8 @@ export const Settings: React.FC = () => {
                 <button onClick={() => openCatEdit(cat)} className="text-wine-500 hover:text-wine-800 dark:text-slate-400 dark:hover:text-white">
                   <Edit size={14} />
                 </button>
-                <button onClick={() => {
-                  if (window.confirm('Tem certeza que deseja excluir esta categoria?')) {
+                <button onClick={async () => {
+                  if (await confirmDialog('Tem certeza que deseja excluir esta categoria?')) {
                     deleteCategory(cat.id);
                   }
                 }} className="text-wine-300 hover:text-red-500">
@@ -641,8 +641,8 @@ export const Settings: React.FC = () => {
                           <button type="button" onClick={() => openGroupEdit(g)} className="text-wine-400 hover:text-wine-800">
                             <Edit size={12} />
                           </button>
-                          <button type="button" onClick={() => {
-                            if (window.confirm('Tem certeza que deseja excluir este grupo? Todas as categorias vinculadas ficarão sem grupo.')) {
+                          <button type="button" onClick={async () => {
+                            if (await confirmDialog('Tem certeza que deseja excluir este grupo? Todas as categorias vinculadas ficarão sem grupo.')) {
                               deleteCategoryGroup(g.id);
                             }
                           }} className="text-wine-300 hover:text-red-500">
@@ -1248,8 +1248,8 @@ export const Settings: React.FC = () => {
                           <Edit size={18} />
                         </button>
                         <button
-                          onClick={() => {
-                            if (window.confirm('Excluir esta taxa?')) {
+                          onClick={async () => {
+                            if (await confirmDialog('Excluir esta taxa?')) {
                               deleteCardFee(fee.id);
                             }
                           }}

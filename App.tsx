@@ -1,28 +1,12 @@
-import React, { useState } from 'react';
+import React, { Suspense, useEffect, useRef, useState } from 'react';
 import { AppProvider, useAppStore } from './store';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { StoreProvider, useStore } from './contexts/StoreContext';
 import { PushNotificationProvider } from './components/PushNotificationProvider';
 import { AppView } from './types';
-import { Dashboard } from './pages/Dashboard';
-import { Financial } from './pages/Financial';
-import { Inventory } from './pages/Inventory';
-import { Sales } from './pages/Sales';
-import { Customers } from './pages/Customers';
-import { Settings as SettingsPage } from './pages/Settings';
-import { Production } from './pages/Production';
-import { Deliveries } from './pages/Deliveries';
-import { Suppliers } from './pages/Suppliers';
-import { Reports } from './pages/Reports';
-import { SalesHistory } from './pages/SalesHistory';
-import { Orders } from './pages/Orders';
-import { StockEntries } from './pages/StockEntries';
-import { Modules } from './pages/Modules';
-import { Quotes } from './pages/Quotes';
-import { StoreAdmin } from './pages/StoreAdmin';
-import { Team } from './pages/Team';
 import { NoStore } from './pages/NoStore';
 import { AccessExpired } from './pages/AccessExpired';
+import { DialogHost } from './components/UI';
 import { SubscriptionBanner } from './components/SubscriptionBanner';
 import { Login } from './pages/Login';
 import { MODULES, MODULE_CATEGORIES, ModuleCategory, ROLE_LABELS } from './lib/modules';
@@ -55,8 +39,29 @@ import {
   Smartphone,
   Store as StoreIcon,
   Boxes,
+  Search,
 } from 'lucide-react';
-import { MobileApp } from './components/mobile/MobileApp';
+
+// Telas carregadas sob demanda (code-splitting): cada uma vira um arquivo próprio.
+const lazyPage = <T extends Record<string, any>>(loader: () => Promise<T>, name: keyof T) =>
+  React.lazy(() => loader().then(m => ({ default: m[name] as React.ComponentType<any> })));
+const Dashboard = lazyPage(() => import('./pages/Dashboard'), 'Dashboard');
+const Financial = lazyPage(() => import('./pages/Financial'), 'Financial');
+const Inventory = lazyPage(() => import('./pages/Inventory'), 'Inventory');
+const Sales = lazyPage(() => import('./pages/Sales'), 'Sales');
+const Customers = lazyPage(() => import('./pages/Customers'), 'Customers');
+const Production = lazyPage(() => import('./pages/Production'), 'Production');
+const Deliveries = lazyPage(() => import('./pages/Deliveries'), 'Deliveries');
+const Suppliers = lazyPage(() => import('./pages/Suppliers'), 'Suppliers');
+const Reports = lazyPage(() => import('./pages/Reports'), 'Reports');
+const SalesHistory = lazyPage(() => import('./pages/SalesHistory'), 'SalesHistory');
+const Orders = lazyPage(() => import('./pages/Orders'), 'Orders');
+const StockEntries = lazyPage(() => import('./pages/StockEntries'), 'StockEntries');
+const Quotes = lazyPage(() => import('./pages/Quotes'), 'Quotes');
+const StoreAdmin = lazyPage(() => import('./pages/StoreAdmin'), 'StoreAdmin');
+const Team = lazyPage(() => import('./pages/Team'), 'Team');
+const SettingsPage = lazyPage(() => import('./pages/Settings'), 'Settings');
+const MobileApp = lazyPage(() => import('./components/mobile/MobileApp'), 'MobileApp');
 
 const VIEW_ICONS: Partial<Record<AppView, React.ReactNode>> = {
   DASHBOARD: <LayoutDashboard size={20} />,
@@ -121,27 +126,31 @@ const AppContent: React.FC = () => {
   const { status: storeStatus, stores, activeStore, role, canAccessView, switchStore, subscription } = useStore();
   const [isSidebarOpen, setSidebarOpen] = useState(true);
 
-  const [hasSelectedModule, setHasSelectedModule] = useState(() => {
-    // Abre direto no sistema; a barra lateral já agrupa os módulos.
-    return true;
+  const [expandedSections, setExpandedSections] = useState<Partial<Record<ModuleCategory, boolean>>>(() => {
+    const cat = MODULES.find(m => m.views.some(v => v.view === currentView))?.category;
+    return cat ? { [cat]: true } : { geral: true };
   });
+  const [menuQuery, setMenuQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
 
-  const updateHasSelectedModule = (val: boolean) => {
-    setHasSelectedModule(val);
-    if (val) {
-      localStorage.setItem('COM_STILLO_MODULE_SELECTED', 'true');
-    } else {
-      localStorage.removeItem('COM_STILLO_MODULE_SELECTED');
-    }
-  };
+  // Abre a categoria da tela atual quando a navegação muda.
+  useEffect(() => {
+    const cat = MODULES.find(m => m.views.some(v => v.view === currentView))?.category;
+    if (cat) setExpandedSections(prev => (prev[cat] ? prev : { ...prev, [cat]: true }));
+  }, [currentView]);
 
-  const [expandedSections, setExpandedSections] = useState<Record<ModuleCategory, boolean>>({
-    geral: true,
-    financeiro: true,
-    comercial: true,
-    operacao: true,
-    sistema: true
-  });
+  // Ctrl+K / Cmd+K: foca a busca do menu.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSidebarOpen(true);
+        window.setTimeout(() => searchRef.current?.focus(), 50);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const [isMobileMode, setIsMobileMode] = useState(() => {
     const saved = localStorage.getItem('COM_STILLO_VIEW_MODE');
@@ -166,19 +175,11 @@ const AppContent: React.FC = () => {
     return (
       <>
         <SubscriptionBanner floating />
-        <MobileApp onSwitchToDesktop={() => handleToggleMobileMode(false)} />
+        <DialogHost />
+        <Suspense fallback={<LoadingScreen message="Carregando versão mobile..." />}>
+          <MobileApp onSwitchToDesktop={() => handleToggleMobileMode(false)} />
+        </Suspense>
       </>
-    );
-  }
-
-  if (!hasSelectedModule) {
-    return (
-      <Modules
-        onSelectModule={(view) => {
-          navigateTo(view);
-          updateHasSelectedModule(true);
-        }}
-      />
     );
   }
 
@@ -285,17 +286,20 @@ const AppContent: React.FC = () => {
 
   // Menu montado a partir do registro de módulos: só aparecem telas de
   // módulos ligados que o papel do usuário pode abrir.
+  const normalizedQuery = menuQuery.trim().toLowerCase();
   const menuSections = MODULE_CATEGORIES.map(cat => ({
     ...cat,
     items: MODULES
       .filter(m => m.category === cat.key)
       .flatMap(m => m.views)
-      .filter(v => v.inMenu && canAccessView(v.view)),
+      .filter(v => v.inMenu && canAccessView(v.view))
+      .filter(v => !normalizedQuery || v.label.toLowerCase().includes(normalizedQuery)),
   })).filter(section => section.items.length > 0);
 
   return (
     <div className={`flex h-screen bg-wine-50 dark:bg-slate-900 overflow-hidden font-sans transition-colors duration-300 ${darkMode ? 'dark' : ''} print:h-auto print:overflow-visible`}>
       <NotificationContainer />
+      <DialogHost />
       {/* Sidebar */}
       <aside
         className={`${isSidebarOpen ? 'translate-x-0 w-64' : '-translate-x-full md:translate-x-0 w-64 md:w-20'} fixed md:relative z-30 h-full bg-wine-900 text-white transition-all duration-300 ease-in-out flex flex-col shadow-xl print:hidden overflow-hidden`}
@@ -313,14 +317,40 @@ const AppContent: React.FC = () => {
         </button>
 
         <nav className="flex-1 overflow-y-auto p-3 sm:p-4 custom-scrollbar">
+          {isSidebarOpen && (
+            <div className="relative mb-2">
+              <Search size={14} className="absolute left-2.5 top-2.5 text-wine-300" aria-hidden />
+              <input
+                ref={searchRef}
+                type="search"
+                value={menuQuery}
+                onChange={e => setMenuQuery(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    const first = menuSections[0]?.items[0];
+                    if (first) { handleNavigate(first.view); setMenuQuery(''); }
+                  } else if (e.key === 'Escape') {
+                    setMenuQuery('');
+                    searchRef.current?.blur();
+                  }
+                }}
+                placeholder="Buscar tela (Ctrl+K)"
+                aria-label="Buscar tela no menu"
+                className="w-full pl-8 pr-2 py-1.5 rounded-lg bg-wine-800/60 text-sm text-white placeholder-wine-300 outline-none focus:ring-2 focus:ring-wine-400"
+              />
+            </div>
+          )}
+          {menuSections.length === 0 && isSidebarOpen && (
+            <p className="px-3 py-4 text-sm text-wine-300">Nenhuma tela encontrada.</p>
+          )}
           {menuSections.map(section => (
             <div key={section.key}>
               <NavCategoryBtn
                 title={section.label}
-                isOpen={expandedSections[section.key]}
+                isOpen={!!expandedSections[section.key] || !!normalizedQuery}
                 onClick={() => toggleSection(section.key)}
               />
-              {(expandedSections[section.key] || !isSidebarOpen) && (
+              {(expandedSections[section.key] || !!normalizedQuery || !isSidebarOpen) && (
                 <div className="space-y-0.5 sm:space-y-1 animate-fade-in-down">
                   {section.items.map(item => (
                     <NavItem key={item.view} view={item.view} icon={VIEW_ICONS[item.view]} label={item.label} />
@@ -421,7 +451,9 @@ const AppContent: React.FC = () => {
         {/* View Area */}
         <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 bg-wine-50 dark:bg-slate-900 transition-colors duration-200 print:overflow-visible print:h-auto print:p-0">
           <div className="w-full max-w-screen-2xl mx-auto animate-fade-in">
-            {renderView()}
+            <Suspense fallback={<LoadingScreen message="Carregando tela..." />}>
+              {renderView()}
+            </Suspense>
           </div>
         </main>
       </div>

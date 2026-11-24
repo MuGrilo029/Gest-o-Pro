@@ -242,3 +242,99 @@ export const formatPhone = (value: string) => {
       .replace(/(\d{5})(\d)/, '$1-$2');
   }
 };
+/** Cabeçalho padrão de página: título, subtítulo e a ação principal. */
+export const PageHeader: React.FC<{
+  title: string;
+  subtitle?: string;
+  actions?: React.ReactNode;
+}> = ({ title, subtitle, actions }) => (
+  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="min-w-0">
+      <h2 className="text-2xl font-bold text-wine-900 dark:text-white">{title}</h2>
+      {subtitle && <p className="text-sm text-wine-600 dark:text-slate-400">{subtitle}</p>}
+    </div>
+    {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
+  </div>
+);
+
+/** Diálogo de confirmação/aviso (substitui confirm()/alert() do navegador). */
+export const ConfirmDialog: React.FC<{
+  isOpen: boolean;
+  title?: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string | null; // null = só botão OK (aviso)
+  danger?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}> = ({ isOpen, title = 'Confirmar', message, confirmLabel = 'Confirmar', cancelLabel = 'Cancelar', danger, onConfirm, onCancel }) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onCancel]);
+  if (!isOpen) return null;
+  return (
+    <div role="alertdialog" aria-modal="true" aria-label={title}
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-wine-950/40 dark:bg-black/60 backdrop-blur-sm p-4"
+      onClick={onCancel}>
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md p-6 border border-wine-100 dark:border-slate-700" onClick={e => e.stopPropagation()}>
+        <h3 className="text-lg font-bold text-wine-900 dark:text-white mb-2">{title}</h3>
+        <p className="text-sm text-wine-700 dark:text-slate-300 whitespace-pre-line mb-6">{message}</p>
+        <div className="flex justify-end gap-2">
+          {cancelLabel !== null && <Button type="button" variant="outline" onClick={onCancel}>{cancelLabel}</Button>}
+          <Button type="button" variant={danger ? 'danger' : 'primary'} autoFocus onClick={onConfirm}>{confirmLabel}</Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+type DialogRequest = {
+  message: string; title?: string; confirmLabel?: string; cancelLabel?: string | null; danger?: boolean;
+  resolve: (ok: boolean) => void;
+};
+let dialogListener: ((req: DialogRequest) => void) | null = null;
+
+const openDialog = (req: Omit<DialogRequest, 'resolve'>) =>
+  new Promise<boolean>(resolve => {
+    if (!dialogListener) { resolve(false); return; } // sem host montado: nunca confirma sozinho
+    dialogListener({ ...req, resolve });
+  });
+
+const DANGER_RE = /exclu|remov|apag|suspend|desligar/i;
+
+/** Pede confirmação ao usuário. Uso: if (await confirmDialog('Excluir?')) { ... } */
+export const confirmDialog = (message: string, opts: { title?: string; confirmLabel?: string; danger?: boolean } = {}) =>
+  openDialog({ message, title: opts.title ?? 'Confirmar', confirmLabel: opts.confirmLabel ?? 'Confirmar', danger: opts.danger ?? DANGER_RE.test(message) });
+
+/** Mostra um aviso com botão OK. */
+export const alertDialog = (message: string, title = 'Aviso') =>
+  openDialog({ message, title, confirmLabel: 'OK', cancelLabel: null }).then(() => undefined);
+
+/** Montar uma vez na raiz do app (desktop e mobile). */
+export const DialogHost: React.FC = () => {
+  const [queue, setQueue] = React.useState<DialogRequest[]>([]);
+  useEffect(() => {
+    dialogListener = req => setQueue(q => [...q, req]);
+    return () => { dialogListener = null; };
+  }, []);
+  const current = queue[0];
+  const close = (ok: boolean) => {
+    current?.resolve(ok);
+    setQueue(q => q.slice(1));
+  };
+  return (
+    <ConfirmDialog
+      isOpen={!!current}
+      title={current?.title}
+      message={current?.message || ''}
+      confirmLabel={current?.confirmLabel}
+      cancelLabel={current?.cancelLabel}
+      danger={current?.danger}
+      onConfirm={() => close(true)}
+      onCancel={() => close(false)}
+    />
+  );
+};

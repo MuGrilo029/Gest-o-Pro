@@ -5,6 +5,7 @@ import { MobileDashboard } from './MobileDashboard';
 import { MobileSalesPDV } from './MobileSalesPDV';
 import { MobileSalesHistory } from './MobileSalesHistory';
 import { MobileInventory } from './MobileInventory';
+import { MobileMore } from './MobileMore';
 import { useAppStore } from '../../store';
 import { useAuth } from '../../contexts/AuthContext';
 import { useRealtimeSales } from '../../hooks/useRealtimeSales';
@@ -267,6 +268,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           onUpdateProductStock={handleUpdateProductStock}
           initialFilterCritical={filterCriticalInStock}
         />
+      ) : activeTab === 'MORE' ? (
+        <MobileMore onSwitchToDesktop={onSwitchToDesktop} />
       ) : null}
     </MobileLayout>
   );

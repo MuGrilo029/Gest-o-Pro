@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
-import { Card, Badge, Button, Input, formatPhone } from '../components/UI';
+import { Card, Badge, Button, Input, formatPhone, confirmDialog, alertDialog } from '../components/UI';
 import { Wrench, CheckCircle, Clock, PlayCircle, ArrowRight, ArrowLeft, FileText, Image as ImageIcon, User, MapPin, Phone, Calendar, ZoomIn, X, Search, Printer, Plus } from 'lucide-react';
 import { ProductionOrder, FurnitureSpecs, Product } from '../types';
 import { Modal } from '../components/UI';
@@ -41,9 +41,9 @@ const OrderCard: React.FC<{ order: ProductionOrder; onClick: (order: ProductionO
           <span className="text-xs text-wine-400">{new Date(order.date).toLocaleDateString()}</span>
         </div>
         <button
-          onClick={(e) => {
+          onClick={async (e) => {
             e.stopPropagation();
-            if (confirm('Deseja excluir esta Ordem de Produção?')) {
+            if (await confirmDialog('Deseja excluir esta Ordem de Produção?')) {
               deleteProductionOrder(order.id);
             }
           }}
@@ -273,7 +273,7 @@ export const Production: React.FC = () => {
 
   const handleCreateManualOrder = async () => {
     if (!manualForm.customerName || !manualForm.itemName) {
-      alert('Preencha o cliente e o item/modelo da produção.');
+      alertDialog('Preencha o cliente e o item/modelo da produção.');
       return;
     }
 
@@ -317,7 +317,7 @@ export const Production: React.FC = () => {
 
   const saveNewCustomer = () => {
     if (!manualForm.customerName.trim()) {
-      alert('Informe o nome do cliente.');
+      alertDialog('Informe o nome do cliente.');
       return;
     }
     const customer = {
