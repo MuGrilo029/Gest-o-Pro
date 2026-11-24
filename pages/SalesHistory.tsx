@@ -451,8 +451,14 @@ export const SalesHistory: React.FC = () => {
                             <div className="text-right">
                                 <p><span className="font-bold">Status:</span> {viewingSale.status === 'COMPLETED' ? 'CONCLUÍDO' : 'CANCELADO'}</p>
                                 <p><span className="font-bold">Entrega:</span> {viewingSale.deliveryType === 'DELIVERY' ? 'Domicílio' : 'Retirada'}</p>
+                                {viewingSale.deliveryDate && (
+                                    <p><span className="font-bold">Data Prevista:</span> {new Date(viewingSale.deliveryDate).toLocaleDateString()}</p>
+                                )}
                             </div>
                         </div>
+                        {viewingSale.deliveryType === 'DELIVERY' && viewingSale.customerAddress && (
+                            <div className="mb-2 px-2 italic text-[10px]">End: {viewingSale.customerAddress}</div>
+                        )}
 
                         <div className="flex-1 mb-2">
                             <table className="w-full text-left border-collapse">

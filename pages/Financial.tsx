@@ -3,12 +3,13 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../store';
 import { supabase } from '../lib/supabase';
 import { Card, Button, Input, Select, SearchableSelect, Table, Badge, Modal } from '../components/UI';
-import { Plus, CheckCircle, Trash2, Filter, X, Calendar, DollarSign, AlertCircle, Clock, TrendingUp, Sparkles, CalendarCheck, Search, BellRing, PieChart, FileText, Receipt, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, CheckCircle, Trash2, Filter, X, Calendar, DollarSign, AlertCircle, Clock, TrendingUp, Sparkles, CalendarCheck, Search, BellRing, PieChart, FileText, Receipt, ArrowUpDown, ArrowUp, ArrowDown, Eye } from 'lucide-react';
 import { parseISO, formatISO, formatDisplayDate, getUUID, isInRange as utilsIsInRange } from '../lib/utils';
-import { Transaction } from '../types';
+import { Transaction, Sale } from '../types';
+import { SaleSummaryModal } from '../components/SaleSummaryModal';
 
 export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' }> = ({ type }) => {
-  const { transactions, addTransaction, updateTransaction, deleteTransaction, splitTransactionPayment, categories, categoryGroups, addCategory, addCategoryGroup, navigateTo, addNotification } = useAppStore();
+  const { transactions, addTransaction, updateTransaction, deleteTransaction, splitTransactionPayment, categories, categoryGroups, addCategory, addCategoryGroup, navigateTo, addNotification, setEditingSaleId } = useAppStore();
   const [showForm, setShowForm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -20,6 +21,23 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
   const [paymentDate, setPaymentDate] = useState(formatISO(new Date()));
   const [paymentNotes, setPaymentNotes] = useState('');
   const [printingReceipt, setPrintingReceipt] = useState<{ transaction: Transaction } | null>(null);
+  const [viewingSale, setViewingSale] = useState<Sale | null>(null);
+
+  const findSaleForTransaction = (t: Transaction): Sale | null => {
+    if (t.saleId) {
+      const found = sales.find(s => s.id === t.saleId);
+      if (found) return found;
+    }
+    if (t.description) {
+      const match = t.description.match(/Venda #([a-fA-F0-9]+)/);
+      if (match && match[1]) {
+        const prefix = match[1].toLowerCase();
+        const found = sales.find(s => s.id.toLowerCase().startsWith(prefix));
+        if (found) return found;
+      }
+    }
+    return null;
+  };
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newGroupId, setNewGroupId] = useState('');
@@ -846,6 +864,23 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
                       </button>
                     )}
 
+                    {(() => {
+                      const saleAssociated = findSaleForTransaction(t);
+                      if (!saleAssociated) return null;
+                      return (
+                        <button
+                          title="Resumo da Venda"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setViewingSale(saleAssociated);
+                          }}
+                          className="p-1 text-wine-600 hover:bg-wine-50 dark:text-wine-400 dark:hover:bg-wine-900/30 rounded"
+                        >
+                          <Eye size={18} />
+                        </button>
+                      );
+                    })()}
+
                     {t.saleId && t.status === 'PAID' && (
                       <button
                         title="Imprimir Recibo"
@@ -888,6 +923,19 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
           </Table>
         </Card>
       </div>
+
+      {/* MODAL RESUMO DA VENDA */}
+      <SaleSummaryModal
+        isOpen={!!viewingSale}
+        sale={viewingSale}
+        onClose={() => setViewingSale(null)}
+        transactions={transactions}
+        onPrintReceipt={(sale, trans) => handlePrintReceipt(trans)}
+        onEditSale={(sale) => {
+          setEditingSaleId(sale.id);
+          navigateTo('SALES');
+        }}
+      />
 
       {/* MODAL PAGAMENTO PARCIAL */}
       <Modal

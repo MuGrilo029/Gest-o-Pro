@@ -53,13 +53,14 @@ serve(async (req: Request) => {
     const pushPayload = JSON.stringify({
       title: `${clienteNome} • Nova Venda`,
       body: `Venda no valor de ${valorFormatado} registrada com sucesso!`,
-      icon: '/favicon.svg',
-      badge: '/favicon.svg',
+      icon: '/app-icon.jpg',
+      badge: '/app-icon.jpg',
       metadata: {
         saleId: sale.id,
         url: '/'
       }
     });
+
 
 
     // Buscar todas as inscrições ativas no banco de dados

@@ -45,10 +45,11 @@ self.addEventListener('push', (event) => {
   let notificationData = {
     title: '💰 Nova Venda!',
     body: 'Uma nova venda foi registrada.',
-    icon: '/favicon.ico',
-    badge: '/favicon.ico',
+    icon: '/app-icon.jpg',
+    badge: '/app-icon.jpg',
     tag: 'sale-notification',
     requireInteraction: false
+
   };
 
   if (event.data) {

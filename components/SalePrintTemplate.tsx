@@ -80,8 +80,14 @@ export const SalePrintTemplate: React.FC<SalePrintTemplateProps> = ({
           <div className="text-right">
             <p><span className="font-bold">Status:</span> {sale.status === 'COMPLETED' ? 'CONCLUÍDO' : 'CANCELADO'}</p>
             <p><span className="font-bold">Entrega:</span> {sale.deliveryType === 'DELIVERY' ? 'Domicílio' : 'Retirada'}</p>
+            {sale.deliveryDate && (
+              <p><span className="font-bold">Data Prevista:</span> {new Date(sale.deliveryDate).toLocaleDateString()}</p>
+            )}
           </div>
         </div>
+        {sale.deliveryType === 'DELIVERY' && sale.customerAddress && (
+          <div className="mb-2 px-2 italic text-[10px]">End: {sale.customerAddress}</div>
+        )}
 
         <div className="flex-1 mb-2">
           <table className="w-full text-left border-collapse">
