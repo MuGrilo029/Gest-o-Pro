@@ -4,6 +4,7 @@ import { useAuth } from './AuthContext';
 import { AppView } from '../types';
 import {
   MANAGER_ONLY_VIEWS,
+  PLATFORM_ADMIN_VIEWS,
   MODULES,
   ModuleKey,
   SELLER_DEFAULT_VIEWS,
@@ -161,6 +162,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const isModuleEnabled = useCallback((key: ModuleKey) => !!moduleStates[key], [moduleStates]);
 
   const canAccessView = useCallback((view: AppView) => {
+    // Administração de lojas, módulos e equipe é só do administrador da plataforma.
+    if (PLATFORM_ADMIN_VIEWS.includes(view)) return isPlatformAdmin;
     const mod = moduleForView(view);
     if (mod && !moduleStates[mod.key]) return false;
     if (!role) return false;
@@ -168,7 +171,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (MANAGER_ONLY_VIEWS.includes(view)) return false;
     const allowed = activeStore?.permissions?.length ? activeStore.permissions : SELLER_DEFAULT_VIEWS;
     return allowed.includes(view);
-  }, [moduleStates, role, activeStore]);
+  }, [moduleStates, role, activeStore, isPlatformAdmin]);
 
   const switchStore = useCallback(async (storeId: string) => {
     if (legacyMode || storeId === activeStoreId) return;

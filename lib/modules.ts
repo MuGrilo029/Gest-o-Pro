@@ -188,7 +188,7 @@ export const MODULES: ModuleDefinition[] = [
     defaultEnabled: true,
     views: [
       { view: 'SETTINGS', label: 'Configurações', inMenu: true },
-      { view: 'STORE_ADMIN', label: 'Loja, Equipe e Módulos', inMenu: true },
+      { view: 'STORE_ADMIN', label: 'Administração (Lojas)', inMenu: true },
     ],
   },
 ];
@@ -206,6 +206,12 @@ export const ROLE_LABELS: Record<StoreRole, string> = {
   MANAGER: 'Gerente',
   SELLER: 'Vendedor',
 };
+
+/**
+ * Telas só do administrador da plataforma (o desenvolvedor): criar lojas,
+ * ligar módulos e montar equipes. Dono e gerente de loja não acessam.
+ */
+export const PLATFORM_ADMIN_VIEWS: AppView[] = ['STORE_ADMIN'];
 
 /** Telas que só dono/gerente acessam, mesmo que o vendedor tenha permissão marcada. */
 export const MANAGER_ONLY_VIEWS: AppView[] = ['SETTINGS', 'STORE_ADMIN', 'PAYABLES', 'RECEIVABLES', 'BOLETOS', 'REPORTS'];

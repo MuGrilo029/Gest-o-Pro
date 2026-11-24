@@ -40,7 +40,7 @@ export const NoStore: React.FC = () => {
           <>
             <h1 className="text-2xl font-bold text-center text-wine-950 dark:text-white mb-2">Crie sua primeira loja</h1>
             <p className="text-center text-wine-600 dark:text-slate-400 mb-6">
-              Depois você liga e desliga módulos e adiciona a equipe em "Loja, Equipe e Módulos".
+              Depois você liga e desliga módulos e adiciona a equipe em "Administração (Lojas)".
             </p>
             <form onSubmit={handleCreate} className="space-y-4">
               <label className="block">

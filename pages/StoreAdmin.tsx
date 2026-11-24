@@ -20,8 +20,8 @@ import {
 type Tab = 'MODULES' | 'TEAM' | 'STORES';
 
 const ROLE_HELP: Record<StoreRole, string> = {
-  OWNER: 'Acesso total, inclusive equipe, módulos e outros donos.',
-  MANAGER: 'Acesso total à loja e à equipe, menos alterar donos.',
+  OWNER: 'Acesso a todas as telas da loja (vendas, financeiro, configurações). Não cria lojas nem mexe em módulos ou equipe.',
+  MANAGER: 'Mesmo acesso do dono dentro da loja.',
   SELLER: 'Vê só as próprias vendas e orçamentos e as telas marcadas.',
 };
 
@@ -67,7 +67,7 @@ export const StoreAdmin: React.FC = () => {
   const { addNotification } = useAppStore();
   const { user } = useAuth();
   const {
-    legacyMode, stores, activeStore, role, isPlatformAdmin, moduleStates,
+    legacyMode, stores, activeStore, isPlatformAdmin, moduleStates,
     setModuleEnabled, listMembers, addMember, updateMember, removeMember, switchStore, createStore,
   } = useStore();
 
@@ -188,9 +188,10 @@ export const StoreAdmin: React.FC = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-wine-950 dark:text-white">Loja, Equipe e Módulos</h1>
+        <h1 className="text-2xl font-bold text-wine-950 dark:text-white">Administração da Plataforma</h1>
         <p className="text-wine-600 dark:text-slate-400">
-          {activeStore?.name} · você é <strong>{role ? ROLE_LABELS[role] : '-'}</strong>
+          Loja selecionada: <strong>{activeStore?.name}</strong>. Só o administrador da plataforma vê esta tela;
+          donos e gerentes de loja não têm acesso.
         </p>
       </div>
 
@@ -365,7 +366,6 @@ export const StoreAdmin: React.FC = () => {
               </p>
               <Select label="Papel" value={newRole} onChange={e => setNewRole(e.target.value as StoreRole)} disabled={legacyMode}>
                 {(['SELLER', 'MANAGER', 'OWNER'] as StoreRole[])
-                  .filter(r => r !== 'OWNER' || role === 'OWNER')
                   .map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
               </Select>
               <p className="text-xs text-wine-600 dark:text-slate-400">{ROLE_HELP[newRole]}</p>
@@ -448,7 +448,7 @@ export const StoreAdmin: React.FC = () => {
                   </p>
                 </fieldset>
                 <p className="text-xs text-wine-500 dark:text-slate-400">
-                  Você entra como dono da loja nova e passa a usá-la na hora.
+                  Você passa a usar a loja nova na hora. Depois, em "Equipe", adicione o dono da loja pelo e-mail.
                 </p>
                 <Button type="submit" className="w-full" disabled={legacyMode || creatingStore || !newStoreName.trim()}>
                   <Plus size={16} /> {creatingStore ? 'Criando...' : 'Criar loja'}

@@ -385,7 +385,7 @@ export const Settings: React.FC = () => {
   const tabs = [
     { id: 'GENERAL', label: 'Empresa', icon: <Building size={18} /> },
     { id: 'CATEGORIES', label: 'Categorias', icon: <Tag size={18} /> },
-    // A gestão de usuários agora fica em "Loja, Equipe e Módulos" (pages/StoreAdmin.tsx).
+    // A gestão de usuários agora fica em "Administração (Lojas)" (pages/StoreAdmin.tsx), só para o administrador da plataforma.
     { id: 'ORDERS', label: 'Emissão de Pedido', icon: <FileText size={18} /> },
     { id: 'FEES', label: 'Taxas de Cartão', icon: <DollarSign size={18} /> },
     { id: 'IMPORT_EXPORT', label: 'Importar / Exportar', icon: <FileSpreadsheet size={18} />, permission: 'IMPORT_EXPORT' },
