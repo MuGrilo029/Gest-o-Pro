@@ -1,5 +1,32 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap');
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Paleta da marca (padrão). Cada loja pode trocar estes valores em runtime: lib/brand.ts. */
+:root {
+  --brand-50: 251 244 245;
+  --brand-100: 246 232 234;
+  --brand-200: 237 214 218;
+  --brand-300: 223 183 190;
+  --brand-400: 204 142 153;
+  --brand-500: 178 100 113;
+  --brand-600: 149 73 86;
+  --brand-700: 125 58 70;
+  --brand-800: 104 50 60;
+  --brand-900: 86 7 12;
+  --brand-950: 47 15 19;
+}
+
+/* Barra de rolagem (antes ficava inline no index.html) */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #fbf4f5; }
+.dark ::-webkit-scrollbar-track { background: #1e293b; }
+::-webkit-scrollbar-thumb { background: #dfb7be; border-radius: 4px; }
+.dark ::-webkit-scrollbar-thumb { background: #475569; }
+::-webkit-scrollbar-thumb:hover { background: #954956; }
+
 :root {
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --bg-primary: #0b0f19;
@@ -136,4 +163,24 @@ body {
 
 .animate-slide-down {
   animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Tabelas em cartões: .cards-always (sempre) e .cards-on-mobile (só em telas < 768px).
+   Os rótulos vêm de data-label, preenchido por components/ResponsiveTables.tsx. */
+.cards-always thead { display: none; }
+.cards-always table, .cards-always tbody, .cards-always tr, .cards-always td { display: block; width: 100%; }
+.cards-always tr { border: 1px solid rgba(127, 127, 127, 0.25); border-radius: 12px; margin-bottom: 10px; padding: 6px 0; background: rgba(127, 127, 127, 0.06); }
+.cards-always td { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 12px !important; text-align: right; border: 0; }
+.cards-always td::before { content: attr(data-label); font-size: 11px; font-weight: 600; text-transform: uppercase; opacity: 0.65; text-align: left; flex-shrink: 0; }
+.cards-always td[colspan] { display: block; text-align: center; }
+.cards-always td[colspan]::before, .cards-always td:not([data-label])::before { content: none; }
+
+@media (max-width: 767px) {
+  .cards-on-mobile thead { display: none; }
+  .cards-on-mobile table, .cards-on-mobile tbody, .cards-on-mobile tr, .cards-on-mobile td { display: block; width: 100%; }
+  .cards-on-mobile tr { border: 1px solid rgba(127, 127, 127, 0.25); border-radius: 12px; margin-bottom: 10px; padding: 6px 0; background: rgba(127, 127, 127, 0.06); }
+  .cards-on-mobile td { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 12px !important; text-align: right; border: 0; }
+  .cards-on-mobile td::before { content: attr(data-label); font-size: 11px; font-weight: 600; text-transform: uppercase; opacity: 0.65; text-align: left; flex-shrink: 0; }
+  .cards-on-mobile td[colspan] { display: block; text-align: center; }
+  .cards-on-mobile td[colspan]::before, .cards-on-mobile td:not([data-label])::before { content: none; }
 }

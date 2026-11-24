@@ -7,6 +7,7 @@ import { AppView } from '../../types';
 import { useAppStore } from '../../store';
 import { useStore } from '../../contexts/StoreContext';
 import { MODULES, MODULE_CATEGORIES } from '../../lib/modules';
+import { ResponsiveTables } from '../ResponsiveTables';
 
 // Telas do desktop reaproveitadas no celular (carregadas só quando abertas).
 const lazyPage = <T extends Record<string, any>>(loader: () => Promise<T>, name: keyof T) =>
@@ -102,9 +103,11 @@ export const MobileMore: React.FC<MobileMoreProps> = ({ onSwitchToDesktop }) => 
         </button>
         <div className={`${darkMode ? 'dark' : ''}`}>
           <div className="bg-wine-50 dark:bg-slate-900 rounded-2xl p-3 text-wine-950 dark:text-slate-100 overflow-x-auto">
-            <Suspense fallback={<p className="text-sm text-slate-400 p-4">Carregando...</p>}>
-              {renderPage(openView)}
-            </Suspense>
+            <ResponsiveTables always>
+              <Suspense fallback={<p className="text-sm text-slate-400 p-4">Carregando...</p>}>
+                {renderPage(openView)}
+              </Suspense>
+            </ResponsiveTables>
           </div>
         </div>
       </div>

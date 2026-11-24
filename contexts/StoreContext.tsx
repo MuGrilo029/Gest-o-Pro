@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import { AppView } from '../types';
+import { applyBrandColor, normalizeHex } from '../lib/brand';
 import {
   MANAGER_ONLY_VIEWS,
   PLATFORM_ADMIN_VIEWS,
@@ -84,6 +85,9 @@ interface StoreContextValue {
   role: StoreRole | null;
   isManager: boolean;
   isPlatformAdmin: boolean;
+  /** Cor da marca da loja ativa (#rrggbb) ou null = paleta padrão. */
+  brandColor: string | null;
+  setBrandColor: (hex: string | null) => Promise<void>;
   /** Assinatura da loja ativa (null no modo legado ou antes da migração 006). */
   subscription: Subscription | null;
   adminListClients: () => Promise<ClientRow[]>;
@@ -109,6 +113,7 @@ interface StoreContextValue {
 const StoreContext = createContext<StoreContextValue | undefined>(undefined);
 
 const LEGACY_STORE_ID = 'legacy';
+const BRAND_ROW_KEY = 'brand';
 
 const isMissingFunction = (error: any) =>
   !!error && (error.code === 'PGRST202' || error.code === '42883' || /function .* does not exist|Could not find the function/i.test(error.message || ''));
@@ -121,18 +126,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [activeStoreId, setActiveStoreId] = useState<string | null>(null);
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [brandColor, setBrandColorState] = useState<string | null>(null);
   const [storedModules, setStoredModules] = useState<Partial<Record<ModuleKey, boolean>>>({});
 
   const loadModules = useCallback(async (storeId: string) => {
-    const { data, error } = await supabase.from('store_modules').select('module_key, enabled').eq('store_id', storeId);
+    const { data, error } = await supabase.from('store_modules').select('module_key, enabled, config').eq('store_id', storeId);
     if (error) {
       console.error('STORE: erro ao carregar módulos', error);
       setStoredModules({});
+      setBrandColorState(null);
       return;
     }
     const map: Partial<Record<ModuleKey, boolean>> = {};
-    for (const row of data || []) map[row.module_key as ModuleKey] = !!row.enabled;
+    let color: string | null = null;
+    for (const row of data || []) {
+      // A linha especial 'brand' guarda a cor da loja em config.color (não é um módulo).
+      if (row.module_key === BRAND_ROW_KEY) color = normalizeHex((row.config as any)?.color);
+      else map[row.module_key as ModuleKey] = !!row.enabled;
+    }
     setStoredModules(map);
+    setBrandColorState(color);
   }, []);
 
   /** Antes da migração: deriva papel de profiles.roles e liga os módulos padrão. */
@@ -228,6 +241,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     if (acc && acc.access_ok === false) {
       setStoredModules({});
+      setBrandColorState(null);
     } else {
       await loadModules(active);
     }
@@ -387,6 +401,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => window.clearTimeout(timer);
   }, [subscription, reload]);
 
+  // Aplica a cor da loja ativa; ao sair/trocar para loja sem cor, volta ao padrão.
+  useEffect(() => {
+    applyBrandColor(brandColor);
+  }, [brandColor]);
+  useEffect(() => {
+    if (!user) applyBrandColor(null);
+  }, [user]);
+
+  const setBrandColor = useCallback(async (hex: string | null) => {
+    if (legacyMode || !activeStoreId) throw new Error('Aplique a migração multi-loja para personalizar a cor.');
+    const clean = hex ? normalizeHex(hex) : null;
+    if (hex && !clean) throw new Error('Cor inválida. Use o formato #rrggbb.');
+    const { error } = await supabase.from('store_modules').upsert(
+      { store_id: activeStoreId, module_key: BRAND_ROW_KEY, enabled: false, config: { color: clean }, updated_at: new Date().toISOString() },
+      { onConflict: 'store_id,module_key' },
+    );
+    if (error) throw new Error(error.message);
+    setBrandColorState(clean);
+  }, [legacyMode, activeStoreId]);
+
   const toDate = (v: string | null) => (v ? new Date(v) : null);
 
   const adminListClients = useCallback(async (): Promise<ClientRow[]> => {
@@ -466,6 +500,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       role,
       isManager,
       isPlatformAdmin,
+      brandColor,
+      setBrandColor,
       subscription,
       adminListClients,
       adminCreateClient,

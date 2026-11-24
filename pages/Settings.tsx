@@ -1,6 +1,6 @@
 
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../store';
 import { Card, Button, Input, Select, Table, Modal, formatCpfCnpj, formatPhone, confirmDialog, alertDialog } from '../components/UI';
 import { Settings as SettingsIcon, Users, Tag, FileText, Building, Trash2, Plus, UserPlus, Briefcase, ShoppingBag, Truck, DollarSign, Edit, CheckSquare, Square, Upload, Image as ImageIcon, Loader2, Palette, FileSpreadsheet, Download, AlertCircle, ArrowRight, Check } from 'lucide-react';
@@ -37,7 +37,9 @@ export const Settings: React.FC = () => {
 
   // Configurações só abrem para dono/gerente (ver lib/modules.ts), então
   // todas as abas ficam liberadas para quem chega aqui.
-  const { isManager } = useStore();
+  const { isManager, brandColor, setBrandColor, legacyMode } = useStore();
+  const [brandDraft, setBrandDraft] = useState<string>(brandColor || '#7d3a46');
+  useEffect(() => { if (brandColor) setBrandDraft(brandColor); }, [brandColor]);
   const hasPermission = (_role: string) => isManager;
 
   const [activeTab, setActiveTab] = useState<'GENERAL' | 'CATEGORIES' | 'USERS' | 'ORDERS' | 'IMPORT_EXPORT' | 'FEES'>('GENERAL');
@@ -538,6 +540,26 @@ export const Settings: React.FC = () => {
               value={generalForm.address}
               onChange={e => setGeneralForm({ ...generalForm, address: e.target.value })}
             />
+            <div className="pt-2">
+              <label className="text-xs font-semibold text-wine-600 dark:text-wine-300 uppercase tracking-wider">Cor da marca da loja</label>
+              <div className="flex flex-wrap items-center gap-3 mt-1">
+                <input
+                  type="color"
+                  value={brandDraft}
+                  onChange={e => setBrandDraft(e.target.value)}
+                  className="w-12 h-10 rounded border border-wine-200 dark:border-slate-600 bg-transparent cursor-pointer"
+                  aria-label="Escolher cor da marca"
+                  disabled={legacyMode}
+                />
+                <Button type="button" variant="outline" disabled={legacyMode} onClick={async () => {
+                  try { await setBrandColor(brandDraft); alertDialog('Cor da marca aplicada.'); } catch (err: any) { alertDialog(err.message); }
+                }}>Aplicar cor</Button>
+                <Button type="button" variant="outline" disabled={legacyMode || !brandColor} onClick={async () => {
+                  try { await setBrandColor(null); setBrandDraft('#7d3a46'); } catch (err: any) { alertDialog(err.message); }
+                }}>Voltar ao padrão</Button>
+              </div>
+              <p className="text-xs text-wine-500 dark:text-slate-400 mt-1">Muda os botões, menus e destaques desta loja. Vale para todos que usam a loja.</p>
+            </div>
             <div className="pt-4">
               <Button type="submit">Salvar Alterações</Button>
             </div>

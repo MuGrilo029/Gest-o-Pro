@@ -47,6 +47,9 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
 
   // Estado para controlar a visibilidade do filtro
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
+  // Celular: período recolhível e duas seções (Resumo | Lançamentos). No desktop tudo aparece junto.
+  const [showPeriod, setShowPeriod] = useState(false);
+  const [mobileSection, setMobileSection] = useState<'SUMMARY' | 'LIST'>('LIST');
 
   // Date Filter State
   type TimeRange = 'TODAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'CUSTOM';
@@ -453,7 +456,15 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
 
         <div className="flex flex-wrap items-center gap-3">
           {/* Date Filters Group */}
-          <div className="flex flex-wrap items-center gap-2 bg-wine-50/50 dark:bg-slate-900/50 p-1.5 rounded-xl border border-wine-100 dark:border-slate-700">
+          <button
+            type="button"
+            onClick={() => setShowPeriod(v => !v)}
+            aria-expanded={showPeriod}
+            className="lg:hidden h-9 px-3 rounded-lg border border-wine-200 dark:border-slate-600 text-xs font-bold text-wine-700 dark:text-wine-100 flex items-center gap-2"
+          >
+            <Filter size={14} /> Período {showPeriod ? '▲' : '▼'}
+          </button>
+          <div className={`${showPeriod ? 'flex' : 'hidden'} lg:flex flex-wrap items-center gap-2 bg-wine-50/50 dark:bg-slate-900/50 p-1.5 rounded-xl border border-wine-100 dark:border-slate-700`}>
             <div className="flex bg-white dark:bg-slate-800 p-0.5 rounded-lg border border-wine-100/50 dark:border-slate-700/50">
               {[
                 { id: 'TODAY', label: 'Hoje' },
@@ -551,7 +562,16 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
         </div>
       )}
 
+      {/* Seções (só no celular) */}
+      <div className="lg:hidden grid grid-cols-2 gap-1 bg-wine-50 dark:bg-slate-700 p-1 rounded-xl" role="tablist">
+        {([['LIST', 'Lançamentos'], ['SUMMARY', 'Resumo']] as const).map(([id, label]) => (
+          <button key={id} role="tab" aria-selected={mobileSection === id} onClick={() => setMobileSection(id)}
+            className={`py-2 rounded-lg text-xs font-bold ${mobileSection === id ? 'bg-wine-900 text-white shadow' : 'text-wine-600 dark:text-wine-100'}`}>{label}</button>
+        ))}
+      </div>
+
       {/* SUMMARY CARDS */}
+      <div className={`${mobileSection === 'SUMMARY' ? '' : 'hidden'} lg:block space-y-6`}>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* TOTAL GERAL */}
         <Card className="border-l-4 border-l-wine-600">
@@ -669,8 +689,10 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
         </div>
       )}
 
+      </div>
+
       {/* CONTROLE DE FILTROS & TABELA */}
-      <div className="space-y-4">
+      <div className={`${mobileSection === 'LIST' ? '' : 'hidden'} lg:block space-y-4`}>
         {/* Barra de Ferramentas / Busca e Filtro */}
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
           {/* Barra de Pesquisa */}

@@ -2,6 +2,7 @@
 
 import React, { useEffect } from 'react';
 import { X, Inbox } from 'lucide-react';
+import { ResponsiveTables } from './ResponsiveTables';
 
 export const Card: React.FC<{ children: React.ReactNode, className?: string, title?: string, onClick?: (e: React.MouseEvent) => void }> = ({ children, className = '', title, onClick }) => (
   <div onClick={onClick} className={`bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-wine-100 dark:border-slate-700 overflow-hidden transition-colors duration-200 ${className} ${onClick ? 'cursor-pointer hover:shadow-md' : ''}`}>
@@ -131,7 +132,7 @@ export const Badge: React.FC<{ children: React.ReactNode, color: 'green' | 'red'
 };
 
 export const Table: React.FC<{ headers: (string | React.ReactNode)[], children: React.ReactNode }> = ({ headers, children }) => (
-  <div className="overflow-x-auto w-full">
+  <ResponsiveTables className="overflow-x-auto w-full">
     <table className="w-full text-left border-collapse">
       <thead>
         <tr className="border-b border-wine-100 dark:border-slate-700">
@@ -146,7 +147,7 @@ export const Table: React.FC<{ headers: (string | React.ReactNode)[], children: 
         {children}
       </tbody>
     </table>
-  </div>
+  </ResponsiveTables>
 );
 
 export const Modal: React.FC<{

@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import './index.css';
 
 // Global error handling for easier debugging
 window.onerror = function (message, source, lineno, colno, error) {

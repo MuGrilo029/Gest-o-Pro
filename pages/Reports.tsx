@@ -113,6 +113,8 @@ export const Reports: React.FC = () => {
         addNotification
     } = useAppStore();
     const [activeTab, setActiveTab] = useState<ReportTab>('FINANCIAL');
+    // Celular: período recolhível (no desktop sempre visível).
+    const [showPeriod, setShowPeriod] = useState(false);
     const [drillDownGroup, setDrillDownGroup] = useState<string | null>(null);
     const [drillDownModal, setDrillDownModal] = useState<{ 
         isOpen: boolean, 
@@ -1868,7 +1870,15 @@ export const Reports: React.FC = () => {
                         ))}
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setShowPeriod(v => !v)}
+                        aria-expanded={showPeriod}
+                        className="lg:hidden px-3 py-2 rounded-xl text-xs font-black uppercase text-wine-700 dark:text-wine-100 bg-wine-50 dark:bg-slate-700"
+                    >
+                        Período {showPeriod ? '▲' : '▼'}
+                    </button>
+                    <div className={`${showPeriod ? 'flex' : 'hidden'} lg:flex flex-wrap items-center justify-center lg:justify-start gap-2`}>
                         <div className="flex bg-wine-50 dark:bg-slate-700 p-1 rounded-xl">
                             {[
                                 { id: 'TODAY', label: 'Hoje' },

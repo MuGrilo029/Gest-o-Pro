@@ -420,6 +420,18 @@ export const Sales: React.FC = () => {
     setCustomerSearch(''); setShowCustomerResults(false);
   };
 
+  // Fluxo direto: do carrinho vai para a revisão, sem passar pela tela de dados/pagamento.
+  // Entrega sem endereço (ou pagamento parcial) continua pelo passo completo.
+  const quickNextStep = (): SalesStep => ((deliveryType === 'DELIVERY' && !customerAddress) || isPartialPayment ? 'CHECKOUT' : 'CONFIRM');
+  const afterServicesStep = React.useRef<SalesStep>('CHECKOUT');
+  const startFinalize = (target: 'QUICK' | 'FULL') => {
+    const services = cart.filter(i => i.category === 'Serviços');
+    if (target === 'QUICK' && !customerName && deliveryType === 'PICKUP') setCustomerName('Cliente Balcão');
+    const next: SalesStep = target === 'QUICK' ? quickNextStep() : 'CHECKOUT';
+    afterServicesStep.current = next;
+    if (services.length > 0) { setTempCartWithServices(cart); setCurrentServiceIndex(0); setShowServiceModal(true); } else setStep(next);
+  };
+
   const goToConfirmation = () => {
     if (!customerName || (deliveryType === 'DELIVERY' && !customerAddress)) return alertDialog('Preencha os dados do cliente.');
     setStep('CONFIRM');
@@ -431,7 +443,7 @@ export const Sales: React.FC = () => {
     updatedCart[serviceItemsIndices[currentServiceIndex]] = { ...updatedCart[serviceItemsIndices[currentServiceIndex]], serviceType: type, serviceSpecs: specs };
     setTempCartWithServices(updatedCart);
     if (currentServiceIndex < serviceItemsIndices.length - 1) setCurrentServiceIndex(prev => prev + 1);
-    else { setShowServiceModal(false); setCart(updatedCart); setStep('CHECKOUT'); }
+    else { setShowServiceModal(false); setCart(updatedCart); setStep(afterServicesStep.current); }
   };
 
   const processSale = async (finalCart: CartItem[]) => {
@@ -881,12 +893,50 @@ export const Sales: React.FC = () => {
                 </div>
               ))}
             </div>
-            <div className="p-4 border-t space-y-4">
-              <div className="flex justify-between font-bold text-xl"><span>Total</span><span>R$ {subtotal.toFixed(2)}</span></div>
-              <Button className="w-full h-12" disabled={cart.length === 0} onClick={() => {
-                const services = cart.filter(i => i.category === 'Serviços');
-                if (services.length > 0) { setTempCartWithServices(cart); setCurrentServiceIndex(0); setShowServiceModal(true); } else setStep('CHECKOUT');
-              }}>Prosseguir <ArrowRight className="ml-2" /></Button>
+            <div className="p-4 border-t space-y-3 max-h-[60%] overflow-y-auto">
+              {!editingSaleId && (
+                <>
+                  <div className="relative">
+                    <input
+                      className="w-full p-2 border rounded text-sm bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                      placeholder={customerName ? `Cliente: ${customerName}` : 'Cliente (buscar ou deixar em branco = balcão)'}
+                      value={customerSearch}
+                      onChange={e => { setCustomerSearch(e.target.value); setShowCustomerResults(true); }}
+                      aria-label="Buscar cliente"
+                    />
+                    {showCustomerResults && filteredCustomers.length > 0 && (
+                      <div className="absolute bottom-full mb-1 w-full bg-white dark:bg-slate-800 border rounded z-50 shadow-lg">
+                        {filteredCustomers.map(c => <div key={c.id} onClick={() => selectCustomer(c)} className="p-2 text-sm hover:bg-wine-50 dark:hover:bg-slate-700 cursor-pointer">{c.name}</div>)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Select label="Pagamento" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+                      {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                    </Select>
+                    <Input label="Desconto (R$)" type="number" min={0} value={discount} onChange={e => setDiscount(Math.max(0, Number(e.target.value)))} />
+                  </div>
+                  {paymentMethod === 'Cartão Crédito' && (
+                    <Select label="Parcelas" value={installments} onChange={e => setInstallments(Number(e.target.value))}>
+                      {[...Array(24)].map((_, i) => <option key={i + 1} value={i + 1}>{i + 1}x</option>)}
+                    </Select>
+                  )}
+                </>
+              )}
+              {discount > 0 && <div className="flex justify-between text-sm text-gray-500"><span>Subtotal</span><span>R$ {subtotal.toFixed(2)}</span></div>}
+              <div className="flex justify-between font-bold text-xl"><span>Total</span><span>R$ {(editingSaleId ? subtotal : total).toFixed(2)}</span></div>
+              {editingSaleId ? (
+                <Button className="w-full h-12" disabled={cart.length === 0} onClick={() => startFinalize('FULL')}>Prosseguir <ArrowRight className="ml-2" /></Button>
+              ) : (
+                <>
+                  <Button className="w-full h-12" disabled={cart.length === 0} onClick={() => startFinalize('QUICK')}>
+                    <Check size={20} /> Finalizar venda
+                  </Button>
+                  <Button variant="outline" className="w-full" disabled={cart.length === 0} onClick={() => startFinalize('FULL')}>
+                    Mais opções (entrega, pagamento parcial)
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </div >
