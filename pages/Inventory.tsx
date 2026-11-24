@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
-import { Card, Button, Input, Table, Badge, Modal, Select } from '../components/UI';
+import { Card, Button, Input, Table, Badge, Modal, Select, EmptyState } from '../components/UI';
 import { Plus, Trash2, AlertTriangle, DollarSign, Package, TrendingUp, TrendingDown, Upload, Image as ImageIcon, Loader2, Layers } from 'lucide-react';
 import { Product, ProductVariant } from '../types';
 import { supabase } from '../lib/supabase';
@@ -774,7 +774,14 @@ export const Inventory: React.FC = () => {
           ))}
           {filteredProducts.length === 0 && (
             <tr>
-              <td colSpan={8} className="text-center py-8 text-wine-300 dark:text-slate-500">Nenhum produto cadastrado.</td>
+              <td colSpan={8}>
+                <EmptyState
+                  title="Nenhum produto encontrado"
+                  description="Cadastre um produto ou ajuste a busca/filtros para ver itens do estoque."
+                  actionLabel="Novo produto"
+                  onAction={() => handleOpenModal()}
+                />
+              </td>
             </tr>
           )}
         </Table>

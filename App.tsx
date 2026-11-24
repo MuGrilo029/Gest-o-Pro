@@ -22,6 +22,8 @@ import { Quotes } from './pages/Quotes';
 import { StoreAdmin } from './pages/StoreAdmin';
 import { Team } from './pages/Team';
 import { NoStore } from './pages/NoStore';
+import { AccessExpired } from './pages/AccessExpired';
+import { SubscriptionBanner } from './components/SubscriptionBanner';
 import { Login } from './pages/Login';
 import { MODULES, MODULE_CATEGORIES, ModuleCategory, ROLE_LABELS } from './lib/modules';
 import {
@@ -116,11 +118,12 @@ const LoadingScreen = ({ message }: { message: string }) => (
 const AppContent: React.FC = () => {
   const { currentView, navigateTo, darkMode, toggleDarkMode, companySettings, isInitialized, refreshData, addNotification } = useAppStore();
   const { user, loading, signOut } = useAuth();
-  const { status: storeStatus, stores, activeStore, role, canAccessView, switchStore } = useStore();
+  const { status: storeStatus, stores, activeStore, role, canAccessView, switchStore, subscription } = useStore();
   const [isSidebarOpen, setSidebarOpen] = useState(true);
 
   const [hasSelectedModule, setHasSelectedModule] = useState(() => {
-    return localStorage.getItem('COM_STILLO_MODULE_SELECTED') === 'true';
+    // Abre direto no sistema; a barra lateral já agrupa os módulos.
+    return true;
   });
 
   const updateHasSelectedModule = (val: boolean) => {
@@ -156,13 +159,15 @@ const AppContent: React.FC = () => {
   if (!user) return <Login />;
   if (storeStatus === 'loading') return <LoadingScreen message="Carregando sua loja..." />;
   if (storeStatus === 'no_store') return <NoStore />;
+  if (subscription && !subscription.accessOk) return <AccessExpired />;
   if (!isInitialized) return <LoadingScreen message="Carregando dados da loja..." />;
 
   if (isMobileMode) {
     return (
-      <MobileApp
-        onSwitchToDesktop={() => handleToggleMobileMode(false)}
-      />
+      <>
+        <SubscriptionBanner floating />
+        <MobileApp onSwitchToDesktop={() => handleToggleMobileMode(false)} />
+      </>
     );
   }
 
@@ -296,7 +301,7 @@ const AppContent: React.FC = () => {
         className={`${isSidebarOpen ? 'translate-x-0 w-64' : '-translate-x-full md:translate-x-0 w-64 md:w-20'} fixed md:relative z-30 h-full bg-wine-900 text-white transition-all duration-300 ease-in-out flex flex-col shadow-xl print:hidden overflow-hidden`}
       >
         <button
-          onClick={() => updateHasSelectedModule(false)}
+          onClick={() => navigateTo('DASHBOARD')}
           className={`p-4 sm:p-6 border-b border-wine-800 flex items-center ${isSidebarOpen ? 'gap-3 justify-start' : 'justify-center'} hover:bg-wine-800 transition-colors text-left w-full focus:outline-none flex-shrink-0`}
         >
           <TrendingUp className="w-6 h-6 sm:w-8 sm:h-8 text-white shrink-0" />
@@ -335,7 +340,6 @@ const AppContent: React.FC = () => {
           )}
           <button
             onClick={() => {
-              updateHasSelectedModule(false);
               signOut();
             }}
             className={`flex items-center ${isSidebarOpen ? 'gap-2 sm:gap-3 px-3 sm:px-4' : 'justify-center px-0'} py-2 sm:py-2 text-wine-200 hover:text-white hover:bg-wine-800 rounded-lg transition-colors w-full text-sm sm:text-base`}
@@ -349,6 +353,7 @@ const AppContent: React.FC = () => {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col h-full overflow-hidden print:overflow-visible print:h-auto">
+        <SubscriptionBanner />
         {/* Topbar */}
         <header className="h-14 sm:h-16 bg-white dark:bg-slate-800 border-b border-wine-100 dark:border-slate-700 flex items-center justify-between px-3 sm:px-6 shadow-sm z-20 transition-colors duration-200 print:hidden gap-2 sm:gap-4">
           <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="text-wine-600 dark:text-wine-100 hover:text-wine-900 transition-colors focus:outline-none p-2 -ml-2 sm:-ml-4" title="Alternar Menu">

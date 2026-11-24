@@ -3,6 +3,7 @@ import { FurnitureSpecs, Product } from '../types';
 import { Button, Input } from './UI';
 import { Upload, Trash2, Loader2, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useStore } from '../contexts/StoreContext';
 
 interface ServiceConfigFormProps {
     item: Product & { cartQty?: number };
@@ -11,6 +12,9 @@ interface ServiceConfigFormProps {
 }
 
 export const ServiceConfigForm: React.FC<ServiceConfigFormProps> = ({ item, initialSpecs, onConfirm }) => {
+    const { isModuleEnabled } = useStore();
+    // Ficha técnica detalhada (estofados/sob medida) só com o módulo contratado.
+    const detailed = isModuleEnabled('custom_production');
     const [type, setType] = useState<'INTERNAL' | 'OUTSOURCED'>('INTERNAL');
     const [specs, setSpecs] = useState(''); // For outsourced text
     const [osData, setOsData] = useState<FurnitureSpecs>({
@@ -117,7 +121,9 @@ export const ServiceConfigForm: React.FC<ServiceConfigFormProps> = ({ item, init
     };
 
     const handleSubmit = () => {
-        if (type === 'INTERNAL') {
+        if (!detailed) {
+            onConfirm(type, specs || initialSpecs || '');
+        } else if (type === 'INTERNAL') {
             onConfirm(type, JSON.stringify(osData));
         } else {
             onConfirm(type, specs);
@@ -131,7 +137,7 @@ export const ServiceConfigForm: React.FC<ServiceConfigFormProps> = ({ item, init
                 <p className="text-xs text-wine-500 dark:text-slate-300">Defina os detalhes da Ordem de Serviço:</p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            {detailed && <div className="grid grid-cols-2 gap-4">
                 <button
                     onClick={() => setType('INTERNAL')}
                     className={`p-3 rounded-lg border-2 text-center text-sm transition-all ${type === 'INTERNAL' ? 'border-wine-900 bg-wine-100 text-wine-900 font-bold dark:bg-wine-800 dark:text-white dark:border-wine-500' : 'border-wine-100 text-wine-400 dark:border-slate-600'}`}
@@ -144,9 +150,9 @@ export const ServiceConfigForm: React.FC<ServiceConfigFormProps> = ({ item, init
                 >
                     Terceirizado
                 </button>
-            </div>
+            </div>}
 
-            {type === 'INTERNAL' ? (
+            {detailed && type === 'INTERNAL' ? (
                 <div className="space-y-6 animate-fade-in text-wine-900 dark:text-white">
                     <Input
                         label="Modelo do Estofado"
@@ -361,7 +367,7 @@ export const ServiceConfigForm: React.FC<ServiceConfigFormProps> = ({ item, init
                     <label className="text-xs font-semibold text-wine-600 dark:text-wine-300 uppercase tracking-wider">Observações (Opcional)</label>
                     <textarea
                         className="w-full h-32 p-3 border border-wine-200 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-wine-500 text-black dark:text-white bg-white dark:bg-slate-700 placeholder-wine-300"
-                        placeholder="Observações sobre a terceirização..."
+                        placeholder={detailed ? 'Observações sobre a terceirização...' : 'Detalhes do serviço (medidas, materiais, prazos...)'}
                         value={specs}
                         onChange={e => setSpecs(e.target.value)}
                     />

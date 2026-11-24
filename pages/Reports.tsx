@@ -36,7 +36,6 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     LineChart, Line, PieChart, Pie, Cell, AreaChart, Area, ComposedChart, ReferenceLine
 } from 'recharts';
-import * as XLSX from 'xlsx';
 
 type ReportTab = 'FINANCIAL' | 'SALES' | 'STOCK' | 'EXPENSES' | 'CUSTOMERS' | 'BOLETOS';
 
@@ -830,7 +829,8 @@ export const Reports: React.FC = () => {
     }, [sales, transactions, products, selectedYear, isAccumulated]);
 
     // --- EXPORT FUNCTION ---
-    const exportToExcel = (data: any[], fileName: string) => {
+    const exportToExcel = async (data: any[], fileName: string) => {
+        const XLSX = await import('xlsx'); // carregado só quando exporta
         const ws = XLSX.utils.json_to_sheet(data);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Sheet1");

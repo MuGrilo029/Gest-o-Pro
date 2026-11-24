@@ -5,6 +5,8 @@ import { useAppStore } from '../store';
 import { useStore, StoreMember } from '../contexts/StoreContext';
 import { useAuth } from '../contexts/AuthContext';
 import { AppView } from '../types';
+import { TempPasswordNotice } from './TempPasswordNotice';
+import { passwordProblem } from '../lib/utils';
 import { MODULES, ROLE_LABELS, SELLER_ASSIGNABLE_VIEWS, SELLER_DEFAULT_VIEWS, StoreRole } from '../lib/modules';
 
 const ROLE_HELP: Record<StoreRole, string> = {
@@ -74,6 +76,7 @@ export const TeamPanel: React.FC = () => {
   const [formPermissions, setFormPermissions] = useState<AppView[]>(SELLER_DEFAULT_VIEWS);
   const [editing, setEditing] = useState<StoreMember | null>(null);
   const [passwordFor, setPasswordFor] = useState<{ userId: string; value: string } | null>(null);
+  const [tempCred, setTempCred] = useState<{ email: string; password: string } | null>(null);
 
   const isViewAvailable = (view: AppView) => {
     const mod = MODULES.find(m => m.views.some(v => v.view === view));
@@ -97,11 +100,14 @@ export const TeamPanel: React.FC = () => {
     e.preventDefault();
     setSaving(true);
     try {
-      const { existingAccount } = await createMember({ ...form, permissions: formPermissions });
+      const pwdIssue = passwordProblem(form.password);
+      if (pwdIssue) throw new Error(pwdIssue);
+      const { existingAccount, temporaryPassword } = await createMember({ ...form, permissions: formPermissions });
+      if (temporaryPassword) setTempCred({ email: form.email, password: temporaryPassword });
       addNotification(
         existingAccount
           ? `${form.email} já tinha conta e foi adicionado à loja. A senha dele não mudou.`
-          : `Acesso criado para ${form.email}. Passe o e-mail e a senha para a pessoa.`,
+          : `Acesso criado para ${form.email}.`,
         'success'
       );
       setForm({ name: '', email: '', password: '', role: assignableRoles[0] });
@@ -129,8 +135,14 @@ export const TeamPanel: React.FC = () => {
   const handleSavePassword = async () => {
     if (!passwordFor) return;
     try {
-      await setMemberPassword(passwordFor.userId, passwordFor.value);
-      addNotification('Senha alterada. Passe a nova senha para a pessoa.', 'success');
+      const pwdIssue = passwordProblem(passwordFor.value);
+      if (pwdIssue) throw new Error(pwdIssue);
+      const temp = await setMemberPassword(passwordFor.userId, passwordFor.value);
+      if (temp) {
+        const who = members.find(x => x.userId === passwordFor.userId);
+        setTempCred({ email: who?.email || '', password: temp });
+      }
+      addNotification('Senha alterada.', 'success');
       setPasswordFor(null);
     } catch (err: any) {
       addNotification(err.message, 'error');
@@ -219,7 +231,7 @@ export const TeamPanel: React.FC = () => {
                 {passwordFor?.userId === m.userId && (
                   <div className="mt-4 p-4 rounded-xl bg-wine-50/60 dark:bg-slate-900/40 space-y-3">
                     <Input
-                      label="Nova senha (mínimo 6 caracteres)"
+                      label="Nova senha (10+ caracteres com letras e números; vazio = gerar uma provisória)"
                       type="password"
                       autoComplete="new-password"
                       value={passwordFor.value}
@@ -227,7 +239,7 @@ export const TeamPanel: React.FC = () => {
                     />
                     <div className="flex gap-2 justify-end">
                       <Button variant="outline" onClick={() => setPasswordFor(null)}>Cancelar</Button>
-                      <Button onClick={handleSavePassword} disabled={passwordFor.value.length < 6}>
+                      <Button onClick={handleSavePassword}>
                         <Check size={16} /> Salvar senha
                       </Button>
                     </div>
@@ -238,6 +250,8 @@ export const TeamPanel: React.FC = () => {
           </ul>
         )}
       </Card>
+
+      {tempCred && <TempPasswordNotice email={tempCred.email} password={tempCred.password} onClose={() => setTempCred(null)} />}
 
       <Card title={isPlatformAdmin ? 'Criar acesso' : 'Criar acesso de vendedor'}>
         <form onSubmit={handleCreate} className="space-y-4">
@@ -252,7 +266,7 @@ export const TeamPanel: React.FC = () => {
             disabled={legacyMode}
           />
           <Input
-            label="Senha (mínimo 6 caracteres)"
+            label="Senha (10+ caracteres com letras e números; vazio = gerar uma provisória)"
             type="password"
             autoComplete="new-password"
             value={form.password}

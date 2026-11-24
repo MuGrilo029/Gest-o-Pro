@@ -31,7 +31,7 @@ interface OrderGroup {
 }
 
 export const Orders: React.FC = () => {
-    const { orders, updateOrder, deleteOrder, navigateTo } = useAppStore();
+    const { orders, updateOrder, deleteOrder, navigateTo, addOrder, addNotification } = useAppStore();
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState<string>('ALL');
     const [selectedGroup, setSelectedGroup] = useState<OrderGroup | null>(null);
@@ -173,7 +173,6 @@ export const Orders: React.FC = () => {
             return;
         }
 
-        const { addOrder, addNotification } = useAppStore.getState();
 
         const newOrder: Order = {
             id: getUUID(),

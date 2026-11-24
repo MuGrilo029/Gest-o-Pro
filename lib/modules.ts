@@ -26,6 +26,7 @@ export type ModuleKey =
   | 'suppliers'
   | 'orders'
   | 'production'
+  | 'custom_production'
   | 'deliveries'
   | 'push_notifications';
 
@@ -148,6 +149,15 @@ export const MODULES: ModuleDefinition[] = [
     views: [{ view: 'PRODUCTION', label: 'Produção', inMenu: true }],
   },
   {
+    key: 'custom_production',
+    name: 'Produção sob medida',
+    description: 'Ficha técnica detalhada da ordem de serviço (ex.: estofados e móveis sob medida: modelo, espuma, braços, assentos, encosto).',
+    category: 'operacao',
+    defaultEnabled: false,
+    dependsOn: ['production'],
+    views: [],
+  },
+  {
     key: 'suppliers',
     name: 'Fornecedores',
     description: 'Cadastro de fornecedores.',
@@ -268,4 +278,29 @@ export const dependentsOf = (key: ModuleKey): ModuleKey[] => {
   };
   visit(key);
   return [...result];
+};
+
+/**
+ * Regra de acesso a uma tela (pura, usada pelo StoreContext e pelos testes).
+ * - Telas de administração da plataforma: só o administrador.
+ * - Módulo desligado bloqueia suas telas para todos.
+ * - Dono e gerente acessam o resto; vendedor só o que foi liberado e nunca telas de gestão.
+ */
+export const canAccessViewFor = (
+  view: AppView,
+  ctx: {
+    role: StoreRole | null | undefined;
+    isPlatformAdmin: boolean;
+    moduleStates: Partial<Record<ModuleKey, boolean>>;
+    permissions?: AppView[] | null;
+  },
+): boolean => {
+  if (PLATFORM_ADMIN_VIEWS.includes(view)) return ctx.isPlatformAdmin;
+  const mod = moduleForView(view);
+  if (mod && !ctx.moduleStates[mod.key]) return false;
+  if (!ctx.role) return false;
+  if (ctx.role === 'OWNER' || ctx.role === 'MANAGER') return true;
+  if (MANAGER_ONLY_VIEWS.includes(view)) return false;
+  const allowed = ctx.permissions?.length ? ctx.permissions : SELLER_DEFAULT_VIEWS;
+  return allowed.includes(view);
 };

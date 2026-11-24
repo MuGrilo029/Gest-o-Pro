@@ -157,7 +157,7 @@ export const MobileSalesHistory: React.FC<MobileSalesHistoryProps> = ({
         const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
         if (navigator.share && navigator.canShare?.({ files: [file] })) {
           await navigator.share({
-            title: `Pedido - ${selectedSaleDetail.customerName || 'Com Stillo'}`,
+            title: `Pedido - ${selectedSaleDetail.customerName || companySettings.name}`,
             files: [file]
           });
           return;

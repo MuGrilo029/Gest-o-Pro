@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useAppStore } from '../../store';
+import { getBrandInitials } from '../../lib/brand';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -45,6 +47,9 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({
 }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const { companySettings } = useAppStore();
+  const brandName = companySettings.name || 'Gestão Pro';
+  const brandInitials = getBrandInitials(brandName);
 
   const handleRefreshClick = () => {
     setIsRefreshing(true);
@@ -89,11 +94,11 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({
           {/* Logo & Brand */}
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-red-800 to-rose-950 flex items-center justify-center shadow-md shadow-red-950/60 border border-rose-500/30">
-              <span className="text-white font-extrabold text-sm tracking-tighter">CS</span>
+              <span className="text-white font-extrabold text-sm tracking-tighter">{brandInitials}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <h1 className="font-extrabold text-base sm:text-lg tracking-wider text-white uppercase flex items-center gap-1">
-                COM STILLO
+                {brandName}
               </h1>
               <span className="text-[10px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded-md bg-wine-900/60 text-wine-200 border border-wine-700/40">
                 ERP
@@ -251,7 +256,7 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-white">Versão do ERP</p>
-                    <p className="text-xs text-slate-400">COM STILLO Pro 2.0 (Mobile-First)</p>
+                    <p className="text-xs text-slate-400">{brandName} (Mobile-First)</p>
                   </div>
                 </div>
                 <span className="text-xs font-bold text-rose-400 bg-wine-950 px-2.5 py-1 rounded-lg border border-rose-900/40">

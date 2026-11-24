@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
-import { Card, Button, Input, Table, Modal, formatCpfCnpj, formatPhone } from '../components/UI';
+import { Card, Button, Input, Table, Modal, EmptyState, formatCpfCnpj, formatPhone } from '../components/UI';
 import { Plus, Trash2, Search, Phone, MapPin, Mail, MessageCircle } from 'lucide-react';
 import { Customer } from '../types';
 import { getUUID } from '../lib/utils';
@@ -61,16 +61,16 @@ export const Customers: React.FC = () => {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h2 className="text-2xl font-bold text-wine-900">Gestão de Clientes</h2>
+        <h2 className="text-2xl font-bold text-wine-900 dark:text-white">Gestão de Clientes</h2>
         <Button onClick={() => handleOpenModal()}><Plus size={18} /> Novo Cliente</Button>
       </div>
 
       <div className="relative">
-        <Search className="absolute left-3 top-2.5 text-wine-300" size={20} />
+        <Search className="absolute left-3 top-2.5 text-wine-300 dark:text-slate-400" size={20} />
         <input
           type="text"
           placeholder="Buscar cliente por nome, CPF ou telefone..."
-          className="w-full pl-10 pr-4 py-2 border border-wine-200 rounded-lg outline-none focus:ring-2 focus:ring-wine-500 placeholder-wine-400 text-black bg-wine-50"
+          className="w-full pl-10 pr-4 py-2 border border-wine-200 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-wine-500 placeholder-wine-400 dark:placeholder-slate-400 text-black dark:text-white bg-wine-50 dark:bg-slate-700"
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
         />
@@ -162,11 +162,13 @@ export const Customers: React.FC = () => {
           {filteredCustomers.map(c => (
             <tr
               key={c.id}
-              className="hover:bg-wine-50 transition-colors cursor-pointer"
+              className="hover:bg-wine-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer text-wine-900 dark:text-slate-100"
+              tabIndex={0}
               onClick={() => handleOpenModal(c)}
+              onKeyDown={e => { if (e.key === 'Enter') handleOpenModal(c); }}
             >
               <td className="py-3 px-4 font-medium">{c.name}</td>
-              <td className="py-3 px-4 text-wine-500">{c.cpfCnpj || '-'}</td>
+              <td className="py-3 px-4 text-wine-500 dark:text-slate-400">{c.cpfCnpj || '-'}</td>
               <td className="py-3 px-4">
                 <div className="flex flex-col text-sm">
                   {c.phone && (
@@ -187,17 +189,33 @@ export const Customers: React.FC = () => {
                   {c.email && <span className="flex items-center gap-1 text-wine-400"><Mail size={12} /> {c.email}</span>}
                 </div>
               </td>
-              <td className="py-3 px-4 text-sm text-wine-500 truncate max-w-[200px]">
+              <td className="py-3 px-4 text-sm text-wine-500 dark:text-slate-400 truncate max-w-[200px]">
                 {c.address && <span className="flex items-center gap-1"><MapPin size={12} /> {c.address}</span>}
               </td>
               <td className="py-3 px-4">
-                <button className="text-wine-400 hover:text-wine-600 p-1">Editar</button>
+                <button className="text-wine-500 hover:text-wine-700 dark:text-slate-300 dark:hover:text-white p-1" aria-label={`Editar ${c.name}`}>Editar</button>
               </td>
             </tr>
           ))}
           {filteredCustomers.length === 0 && (
             <tr>
-              <td colSpan={5} className="text-center py-8 text-wine-300">Nenhum cliente encontrado.</td>
+              <td colSpan={5}>
+                {searchTerm ? (
+                  <EmptyState
+                    title="Nenhum cliente encontrado"
+                    description={`Nada corresponde a "${searchTerm}". Confira o nome, CPF ou telefone.`}
+                    actionLabel="Limpar busca"
+                    onAction={() => setSearchTerm('')}
+                  />
+                ) : (
+                  <EmptyState
+                    title="Nenhum cliente cadastrado"
+                    description="Cadastre o primeiro cliente para usar nas vendas e orçamentos."
+                    actionLabel="Novo cliente"
+                    onAction={() => handleOpenModal()}
+                  />
+                )}
+              </td>
             </tr>
           )}
         </Table>

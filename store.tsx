@@ -143,7 +143,7 @@ const MOCK_DATA = {
     { id: '11111111-1111-1111-1111-111111111111', name: 'Administrador', email: 'contato@comstillo.com', roles: ['ADMIN'], department: 'Diretoria' }
   ],
   companySettings: {
-    name: 'COM STILLO',
+    name: 'Gestão Pro',
     cnpj: '00.000.000/0001-00',
     phone: '(11) 9999-9999',
     address: 'Rua Principal, 100 - Centro',

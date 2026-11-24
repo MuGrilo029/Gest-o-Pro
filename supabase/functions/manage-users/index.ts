@@ -2,36 +2,58 @@
 //
 // Cria contas (e-mail + senha) e troca senhas sem cadastro público.
 //
-//   create_member  -> cria a conta (ou reaproveita uma existente) e coloca na loja
+//   create_member  -> cria a conta e coloca na loja
 //   set_password   -> define uma nova senha para alguém da loja
 //
 // Quem pode:
 //   * Administrador da plataforma: qualquer papel, qualquer loja.
-//   * Dono/gerente da loja: só VENDEDORES da própria loja.
+//   * Dono/gerente da loja: só VENDEDORES da própria loja, e só contas que
+//     pertencem exclusivamente a essa loja (nunca contas de outras lojas nem
+//     administradores).
 //
 // A chave service_role fica só aqui no servidor (injetada pelo Supabase).
+// Segredos: ALLOWED_ORIGINS (lista de origens do site, separadas por vírgula).
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
+import { buildCorsHeaders } from '../_shared/cors.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+const VALID_ROLES = ['OWNER', 'MANAGER', 'SELLER'];
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PERMISSION_RE = /^[A-Z0-9_]{1,40}$/;
+
+const PASSWORD_MIN = 10;
+const PASSWORD_MAX = 72; // limite do bcrypt
+
+const passwordProblem = (p: unknown): string | null => {
+  if (typeof p !== 'string') return 'Informe a senha.';
+  if (p.length < PASSWORD_MIN) return `A senha precisa ter pelo menos ${PASSWORD_MIN} caracteres.`;
+  if (p.length > PASSWORD_MAX) return `A senha pode ter no máximo ${PASSWORD_MAX} caracteres.`;
+  if (!/[A-Za-z]/.test(p) || !/\d/.test(p)) return 'A senha precisa ter letras e números.';
+  return null;
 };
 
-const VALID_ROLES = ['OWNER', 'MANAGER', 'SELLER'];
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-
-const fail = (message: string, status = 400) => json({ error: message }, status);
+/** Senha provisória aleatória (16 caracteres, sem símbolos ambíguos). */
+const generatePassword = (): string => {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  for (;;) {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    const pwd = Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
+    if (!passwordProblem(pwd)) return pwd;
+  }
+};
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  const cors = buildCorsHeaders(req);
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
+  const fail = (message: string, status = 400) => json({ error: message }, status);
+
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return fail('Método não permitido.', 405);
 
   const authHeader = req.headers.get('Authorization');
@@ -54,8 +76,8 @@ Deno.serve(async (req: Request) => {
     return fail('Requisição inválida.');
   }
 
-  const storeId: string | undefined = body.store_id;
-  if (!storeId) return fail('Loja não informada.');
+  const storeId = typeof body?.store_id === 'string' ? body.store_id : '';
+  if (!UUID_RE.test(storeId)) return fail('Loja não informada.');
 
   const { data: isAdmin } = await caller.rpc('is_platform_admin');
   const { data: isManager } = await caller.rpc('is_store_manager', { p_store: storeId });
@@ -64,73 +86,117 @@ Deno.serve(async (req: Request) => {
   const { data: store } = await admin.from('stores').select('id').eq('id', storeId).maybeSingle();
   if (!store) return fail('Loja não encontrada.', 404);
 
-  const validPassword = (p: unknown) => typeof p === 'string' && p.length >= 6;
-
   // -------------------------------------------------------------------------
   if (body.action === 'create_member') {
     const email = String(body.email || '').trim().toLowerCase();
-    const name = String(body.name || '').trim();
+    const name = String(body.name || '').trim().slice(0, 120);
     const role = String(body.role || 'SELLER');
-    const permissions: string[] = Array.isArray(body.permissions) ? body.permissions.map(String) : [];
+    const permissions: string[] = Array.isArray(body.permissions)
+      ? body.permissions.map(String).filter((p: string) => PERMISSION_RE.test(p)).slice(0, 40)
+      : [];
 
-    if (!email || !email.includes('@')) return fail('Informe um e-mail válido.');
+    if (!EMAIL_RE.test(email) || email.length > 254) return fail('Informe um e-mail válido.');
     if (!VALID_ROLES.includes(role)) return fail('Papel inválido.');
     if (role !== 'SELLER' && !isAdmin) return fail('Dono e gerente só podem criar vendedores.', 403);
 
-    // Procura uma conta existente com o e-mail.
-    let userId: string | null = null;
-    for (let page = 1; page <= 20 && !userId; page++) {
-      const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
-      if (error) return fail('Erro ao consultar contas.', 500);
-      userId = data.users.find((u: any) => u.email?.toLowerCase() === email)?.id ?? null;
-      if (data.users.length < 1000) break;
-    }
+    // Procura conta existente pelo e-mail (profiles espelha auth.users).
+    const { data: existingProfile } = await admin.from('profiles').select('id').eq('email', email).maybeSingle();
+    let userId: string | null = existingProfile?.id ?? null;
+    let wasExisting = !!userId;
+    let temporaryPassword: string | null = null;
 
-    const wasExisting = !!userId;
+    // Mensagem única para qualquer recusa ligada a conta já existente: o
+    // dono/gerente não consegue descobrir quais e-mails têm conta no sistema.
+    const REFUSED = 'Não foi possível adicionar este e-mail. Solicite ao administrador da plataforma.';
+
     if (!userId) {
-      if (!validPassword(body.password)) return fail('A senha precisa ter pelo menos 6 caracteres.');
+      let password = body.password;
+      if (password === undefined || password === null || password === '') {
+        password = generatePassword();
+        temporaryPassword = password;
+      } else {
+        const problem = passwordProblem(password);
+        if (problem) return fail(problem);
+      }
       const { data: created, error } = await admin.auth.admin.createUser({
         email,
-        password: body.password,
+        password,
         email_confirm: true,
         user_metadata: { name: name || email },
       });
-      if (error || !created?.user) return fail(error?.message || 'Não foi possível criar a conta.', 500);
+      if (error || !created?.user) {
+        // Conta existe em auth mas sem perfil (ou corrida): não detalha o motivo.
+        console.error('createUser falhou:', error?.message);
+        return fail(isAdmin ? error?.message || 'Não foi possível criar a conta.' : REFUSED, 409);
+      }
       userId = created.user.id;
     } else if (!isAdmin) {
-      // Gerente não pode rebaixar dono/gerente nem mexer em quem já é de outra loja como gestor.
+      // Dono/gerente só mexe em quem já é VENDEDOR desta loja (atualiza permissões).
+      // Conta de outra loja, administrador, dono ou gerente: recusa genérica.
       const { data: existing } = await admin
         .from('store_members').select('role').eq('store_id', storeId).eq('user_id', userId).maybeSingle();
-      if (existing && existing.role !== 'SELLER') return fail('Essa pessoa já é dona ou gerente desta loja.', 403);
+      if (!existing || existing.role !== 'SELLER') return fail(REFUSED, 409);
+      wasExisting = false; // não revela nada ao chamador
     }
 
-    if (name) await admin.from('profiles').update({ name }).eq('id', userId);
+    // Só atualiza o nome de contas novas ou quando é o administrador.
+    if (name && (isAdmin || !existingProfile)) await admin.from('profiles').update({ name }).eq('id', userId);
 
     const { error: memberError } = await admin.from('store_members').upsert(
       { store_id: storeId, user_id: userId, role, permissions: role === 'SELLER' ? permissions : [] },
       { onConflict: 'store_id,user_id' },
     );
-    if (memberError) return fail(memberError.message, 500);
+    if (memberError) {
+      console.error('upsert store_members falhou:', memberError.message);
+      return fail('Não foi possível salvar o membro.', 500);
+    }
 
     await admin.from('profiles').update({ active_store_id: storeId }).eq('id', userId).is('active_store_id', null);
 
-    return json({ ok: true, user_id: userId, existing_account: wasExisting });
+    const result: Record<string, unknown> = { ok: true, user_id: userId };
+    if (isAdmin) result.existing_account = wasExisting;
+    if (temporaryPassword) result.temporary_password = temporaryPassword; // exibida uma única vez
+    return json(result);
   }
 
   // -------------------------------------------------------------------------
   if (body.action === 'set_password') {
-    const userId = String(body.user_id || '');
-    if (!userId) return fail('Pessoa não informada.');
-    if (!validPassword(body.password)) return fail('A senha precisa ter pelo menos 6 caracteres.');
+    const userId = typeof body.user_id === 'string' ? body.user_id : '';
+    if (!UUID_RE.test(userId)) return fail('Pessoa não informada.');
+
+    let password = body.password;
+    let temporaryPassword: string | null = null;
+    if (password === undefined || password === null || password === '') {
+      password = generatePassword();
+      temporaryPassword = password;
+    } else {
+      const problem = passwordProblem(password);
+      if (problem) return fail(problem);
+    }
 
     const { data: member } = await admin
       .from('store_members').select('role').eq('store_id', storeId).eq('user_id', userId).maybeSingle();
     if (!member) return fail('Pessoa não encontrada nesta loja.', 404);
-    if (!isAdmin && member.role !== 'SELLER') return fail('Dono e gerente só trocam a senha de vendedores.', 403);
 
-    const { error } = await admin.auth.admin.updateUserById(userId, { password: body.password });
-    if (error) return fail(error.message, 500);
-    return json({ ok: true });
+    if (!isAdmin) {
+      if (member.role !== 'SELLER') return fail('Dono e gerente só trocam a senha de vendedores.', 403);
+
+      // Anti-sequestro de conta: dono/gerente só troca senha de quem pertence
+      // SOMENTE a esta loja e não é administrador da plataforma.
+      const { data: target } = await admin.from('profiles').select('is_platform_admin').eq('id', userId).maybeSingle();
+      const { count } = await admin
+        .from('store_members').select('store_id', { count: 'exact', head: true }).eq('user_id', userId);
+      if (target?.is_platform_admin || (count ?? 0) !== 1) {
+        return fail('Esta conta não pode ser alterada pela loja. Solicite ao administrador da plataforma.', 403);
+      }
+    }
+
+    const { error } = await admin.auth.admin.updateUserById(userId, { password });
+    if (error) {
+      console.error('updateUserById falhou:', error.message);
+      return fail('Não foi possível alterar a senha.', 500);
+    }
+    return json(temporaryPassword ? { ok: true, temporary_password: temporaryPassword } : { ok: true });
   }
 
   return fail('Ação desconhecida.');

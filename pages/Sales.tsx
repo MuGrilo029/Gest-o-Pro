@@ -1017,7 +1017,7 @@ export const Sales: React.FC = () => {
 
             <div className="grid grid-cols-2 gap-8 mt-auto pt-8">
               <div className="border-t border-black text-center pt-1">
-                <p className="font-bold uppercase tracking-widest text-[10px]">COM STILLO MÓVEIS</p>
+                <p className="font-bold uppercase tracking-widest text-[10px]">{companySettings.name}</p>
                 <p className="text-[9px]">Assinatura do Responsável</p>
               </div>
               <div className="border-t border-black text-center pt-1">
@@ -1027,7 +1027,7 @@ export const Sales: React.FC = () => {
             </div>
 
             <div className="text-center text-[8px] text-gray-400 mt-2">
-              Emitido por COM STILLO em {new Date().toLocaleString()}
+              Emitido por {companySettings.name} em {new Date().toLocaleString()}
             </div>
           </div>
         )}

@@ -6,6 +6,15 @@
  * Converte uma string 'YYYY-MM-DD' ou ISO Timestamp em um objeto Date local (meia-noite).
  * Evita o problema onde '2023-10-25' vira '2023-10-24 21:00' devido ao GMT-3.
  */
+/** Mesma regra do servidor (manage-users): 10 a 72 caracteres, com letras e números. Vazio = o servidor gera. */
+export const passwordProblem = (p: string): string | null => {
+  if (!p) return null;
+  if (p.length < 10) return 'A senha precisa ter pelo menos 10 caracteres.';
+  if (p.length > 72) return 'A senha pode ter no máximo 72 caracteres.';
+  if (!/[A-Za-z]/.test(p) || !/\d/.test(p)) return 'A senha precisa ter letras e números.';
+  return null;
+};
+
 export const parseISO = (dateStr: string): Date => {
     if (!dateStr) return new Date();
 

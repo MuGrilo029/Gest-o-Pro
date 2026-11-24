@@ -64,7 +64,7 @@ interface MobileSalesPDVProps {
   onUpdateCartItemQty: (itemId: string, newQty: number) => void;
   onRemoveCartItem: (itemId: string) => void;
   onClearCart: () => void;
-  onCompleteSale: (saleData: Omit<Sale, 'status'> & { items: MobileCartItem[] }) => Promise<boolean>;
+  onCompleteSale: (saleData: Omit<Sale, 'status' | 'items'> & { items: MobileCartItem[] }) => Promise<boolean>;
 }
 
 // ─── Payment Method Definitions ───────────────────────────────────────────────

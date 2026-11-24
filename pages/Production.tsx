@@ -179,7 +179,7 @@ const OrderCard: React.FC<{ order: ProductionOrder; onClick: (order: ProductionO
 };
 
 export const Production: React.FC = () => {
-  const { productionOrders, updateProductionOrderStatus, customers, addCustomer, addProductionOrder, addNotification } = useAppStore();
+  const { productionOrders, updateProductionOrderStatus, customers, addCustomer, addProductionOrder, addNotification, companySettings } = useAppStore();
   const [selectedOrder, setSelectedOrder] = useState<ProductionOrder | null>(null);
   const [isImageZoomed, setIsImageZoomed] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -847,7 +847,7 @@ export const Production: React.FC = () => {
             </div>
 
             <div className="mt-12 pt-4 border-t text-center text-xs text-gray-400">
-              Impresso por COM STILLO em {new Date().toLocaleString()}
+              Impresso por {companySettings.name} em {new Date().toLocaleString()}
             </div>
 
           </div>

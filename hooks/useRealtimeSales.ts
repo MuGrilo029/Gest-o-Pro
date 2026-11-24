@@ -25,7 +25,7 @@ export const useRealtimeSales = (onNewSale?: (notification: SaleNotification) =>
         },
         (payload) => {
           // Only notify for sales created after this component mounted
-          const insertedAt = new Date(payload.created_at || Date.now()).getTime();
+          const insertedAt = new Date((payload.new as any).created_at || Date.now()).getTime();
           if (insertedAt > lastSaleTime - 2000) {
             // 2 second buffer to account for clock skew
             const notification: SaleNotification = {

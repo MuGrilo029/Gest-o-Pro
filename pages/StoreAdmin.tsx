@@ -1,12 +1,13 @@
 import React, { useState } from "react";
-import { Boxes, Users, Store, Plus, Lock, AlertTriangle } from "lucide-react";
+import { Boxes, Users, Store, Plus, Lock, AlertTriangle, Briefcase } from "lucide-react";
 import { Card, Button, Input, Badge } from "../components/UI";
 import { TeamPanel } from "../components/TeamPanel";
+import { ClientsPanel } from "../components/ClientsPanel";
 import { useAppStore } from "../store";
 import { useStore } from "../contexts/StoreContext";
 import { MODULES, MODULE_CATEGORIES, ModuleKey, ROLE_LABELS, dependentsOf, getModule } from "../lib/modules";
 
-type Tab = "MODULES" | "TEAM" | "STORES";
+type Tab = "CLIENTS" | "MODULES" | "TEAM" | "STORES";
 
 export const StoreAdmin: React.FC = () => {
   const { addNotification } = useAppStore();
@@ -15,7 +16,7 @@ export const StoreAdmin: React.FC = () => {
     setModuleEnabled, switchStore, createStore,
   } = useStore();
 
-  const [tab, setTab] = useState<Tab>('MODULES');
+  const [tab, setTab] = useState<Tab>('CLIENTS');
   const [busyModule, setBusyModule] = useState<ModuleKey | null>(null);
 
   // Lojas
@@ -59,6 +60,7 @@ export const StoreAdmin: React.FC = () => {
   };
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
+    { id: 'CLIENTS', label: 'Clientes', icon: <Briefcase size={18} /> },
     { id: 'MODULES', label: 'Módulos', icon: <Boxes size={18} /> },
     { id: 'TEAM', label: 'Equipe', icon: <Users size={18} /> },
     { id: 'STORES', label: 'Lojas', icon: <Store size={18} /> },
@@ -69,7 +71,7 @@ export const StoreAdmin: React.FC = () => {
       <div>
         <h1 className="text-2xl font-bold text-wine-950 dark:text-white">Administração da Plataforma</h1>
         <p className="text-wine-600 dark:text-slate-400">
-          Loja selecionada: <strong>{activeStore?.name}</strong>. Só o administrador da plataforma vê esta tela;
+          Loja selecionada: <strong>{activeStore?.name}</strong> (as abas Módulos e Equipe valem para ela). Só o administrador da plataforma vê esta tela;
           donos e gerentes de loja não têm acesso.
         </p>
       </div>
@@ -99,6 +101,9 @@ export const StoreAdmin: React.FC = () => {
           </button>
         ))}
       </div>
+
+      {/* CLIENTES */}
+      {tab === 'CLIENTS' && <ClientsPanel />}
 
       {/* MÓDULOS */}
       {tab === 'MODULES' && (

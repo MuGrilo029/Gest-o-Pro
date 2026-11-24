@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { Card, Button, Input, Select, Table, Modal, formatCpfCnpj, formatPhone } from '../components/UI';
 import { Settings as SettingsIcon, Users, Tag, FileText, Building, Trash2, Plus, UserPlus, Briefcase, ShoppingBag, Truck, DollarSign, Edit, CheckSquare, Square, Upload, Image as ImageIcon, Loader2, Palette, FileSpreadsheet, Download, AlertCircle, ArrowRight, Check } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { Category, User, CategoryType, UserRole, CategoryGroup, CardFee } from '../types';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -171,19 +170,39 @@ export const Settings: React.FC = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
-    setFile(selectedFile);
     setImportMessage(null);
     setRawPreviewData([]);
     setProcessedData([]);
 
+    // Limites contra arquivos maliciosos ou gigantes.
+    const lowerName = selectedFile.name.toLowerCase();
+    if (!['.xlsx', '.csv'].some(ext => lowerName.endsWith(ext))) {
+      setFile(null);
+      setImportMessage({ type: 'error', text: 'Formato não aceito. Envie um arquivo .xlsx ou .csv.' });
+      e.target.value = '';
+      return;
+    }
+    if (selectedFile.size > 5 * 1024 * 1024) {
+      setFile(null);
+      setImportMessage({ type: 'error', text: 'Arquivo muito grande. O limite é de 5 MB.' });
+      e.target.value = '';
+      return;
+    }
+    setFile(selectedFile);
+
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
+        const XLSX = await import('xlsx'); // carregado só quando importa
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
         const jsonData = XLSX.utils.sheet_to_json(ws);
+        if (jsonData.length > 20000) {
+          setImportMessage({ type: 'error', text: 'Planilha com linhas demais (máximo 20.000).' });
+          return;
+        }
         setRawPreviewData(jsonData);
         const processed = processImportData(jsonData, importModule);
         setProcessedData(processed);
@@ -224,7 +243,7 @@ export const Settings: React.FC = () => {
     }, 1000);
   };
 
-  const handleExport = (moduleId: string, type: 'xlsx' | 'csv') => {
+  const handleExport = async (moduleId: string, type: 'xlsx' | 'csv') => {
     let data: any[] = [];
     if (moduleId === 'payables') {
       data = store.transactions.filter(t => t.type === 'EXPENSE');
@@ -239,6 +258,7 @@ export const Settings: React.FC = () => {
       return;
     }
 
+    const XLSX = await import('xlsx'); // carregado só quando exporta
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Dados");

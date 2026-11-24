@@ -102,7 +102,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   };
 
   // Complete Sale
-  const handleCompleteSale = async (saleData: Omit<Sale, 'status'> & { items: MobileCartItem[] }): Promise<boolean> => {
+  const handleCompleteSale = async (saleData: Omit<Sale, 'status' | 'items'> & { items: MobileCartItem[] }): Promise<boolean> => {
     if (store && store.addSale) {
       const newSale: Sale = {
         id: saleData.id,

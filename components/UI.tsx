@@ -1,7 +1,7 @@
 
 
 import React, { useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, Inbox } from 'lucide-react';
 
 export const Card: React.FC<{ children: React.ReactNode, className?: string, title?: string, onClick?: (e: React.MouseEvent) => void }> = ({ children, className = '', title, onClick }) => (
   <div onClick={onClick} className={`bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-wine-100 dark:border-slate-700 overflow-hidden transition-colors duration-200 ${className} ${onClick ? 'cursor-pointer hover:shadow-md' : ''}`}>
@@ -197,7 +197,32 @@ export const formatCpfCnpj = (value: string) => {
       .replace(/(\d{3})(\d)/, '$1.$2')
       .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
   }
+
+  // CNPJ Mask: 99.999.999/9999-99
+  return v
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1/$2')
+    .replace(/(\d{4})(\d)/, '$1-$2');
 };
+
+/** Estado vazio com explicação e, se houver, uma ação. */
+export const EmptyState: React.FC<{
+  title: string;
+  description?: string;
+  actionLabel?: string;
+  onAction?: () => void;
+  icon?: React.ReactNode;
+}> = ({ title, description, actionLabel, onAction, icon }) => (
+  <div className="flex flex-col items-center justify-center text-center gap-2 py-10 px-4">
+    <div className="text-wine-300 dark:text-slate-500">{icon ?? <Inbox size={36} />}</div>
+    <p className="font-semibold text-wine-900 dark:text-white">{title}</p>
+    {description && <p className="text-sm text-wine-500 dark:text-slate-400 max-w-sm">{description}</p>}
+    {actionLabel && onAction && (
+      <Button type="button" className="mt-2" onClick={onAction}>{actionLabel}</Button>
+    )}
+  </div>
+);
 
 // Utility function for Phone Mask (DD) XXXXX-XXXX
 export const formatPhone = (value: string) => {
