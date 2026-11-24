@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AppProvider, useAppStore } from './store';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { StoreProvider, useStore } from './contexts/StoreContext';
 import { PushNotificationProvider } from './components/PushNotificationProvider';
 import { AppView } from './types';
 import { Dashboard } from './pages/Dashboard';
@@ -17,13 +18,15 @@ import { SalesHistory } from './pages/SalesHistory';
 import { Orders } from './pages/Orders';
 import { StockEntries } from './pages/StockEntries';
 import { Modules } from './pages/Modules';
-
 import { Quotes } from './pages/Quotes';
+import { StoreAdmin } from './pages/StoreAdmin';
+import { NoStore } from './pages/NoStore';
+import { Login } from './pages/Login';
+import { MODULES, MODULE_CATEGORIES, ModuleCategory, ROLE_LABELS } from './lib/modules';
 import {
   LayoutDashboard,
   ArrowUpCircle,
   ArrowDownCircle,
-  ShoppingBag,
   ShoppingCart,
   Package,
   Users,
@@ -46,9 +49,30 @@ import {
   Info,
   History,
   RefreshCcw,
-  Smartphone
+  Smartphone,
+  Store as StoreIcon,
+  Boxes,
 } from 'lucide-react';
 import { MobileApp } from './components/mobile/MobileApp';
+
+const VIEW_ICONS: Partial<Record<AppView, React.ReactNode>> = {
+  DASHBOARD: <LayoutDashboard size={20} />,
+  REPORTS: <TrendingUp size={20} />,
+  PAYABLES: <ArrowDownCircle size={20} />,
+  RECEIVABLES: <ArrowUpCircle size={20} />,
+  BOLETOS: <FileText size={20} />,
+  SALES: <ShoppingCart size={20} />,
+  SALES_HISTORY: <History size={20} />,
+  QUOTES: <FileSpreadsheet size={20} />,
+  CUSTOMERS: <UserCheck size={20} />,
+  INVENTORY: <Package size={20} />,
+  PRODUCTION: <Wrench size={20} />,
+  SUPPLIERS: <Users size={20} />,
+  ORDERS: <Boxes size={20} />,
+  DELIVERIES: <Truck size={20} />,
+  SETTINGS: <Settings size={20} />,
+  STORE_ADMIN: <StoreIcon size={20} />,
+};
 
 const NotificationContainer = () => {
   const { notifications, removeNotification } = useAppStore();
@@ -78,15 +102,21 @@ const NotificationContainer = () => {
   );
 };
 
-
-import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { Login } from './pages/Login';
+const LoadingScreen = ({ message }: { message: string }) => (
+  <div className="h-screen w-full flex items-center justify-center bg-wine-50 dark:bg-slate-900">
+    <div className="flex flex-col items-center gap-4">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-wine-700"></div>
+      <p className="text-wine-800 dark:text-wine-100 font-medium animate-pulse">{message}</p>
+    </div>
+  </div>
+);
 
 const AppContent: React.FC = () => {
-  const { currentView, navigateTo, darkMode, toggleDarkMode, companySettings, users, isInitialized, refreshData, addNotification } = useAppStore();
-  const { user, loading, signOut } = useAuth(); // Use Auth Context
+  const { currentView, navigateTo, darkMode, toggleDarkMode, companySettings, isInitialized, refreshData, addNotification } = useAppStore();
+  const { user, loading, signOut } = useAuth();
+  const { status: storeStatus, stores, activeStore, role, canAccessView, switchStore } = useStore();
   const [isSidebarOpen, setSidebarOpen] = useState(true);
-  
+
   const [hasSelectedModule, setHasSelectedModule] = useState(() => {
     return localStorage.getItem('COM_STILLO_MODULE_SELECTED') === 'true';
   });
@@ -100,8 +130,7 @@ const AppContent: React.FC = () => {
     }
   };
 
-  // Estado para controlar quais categorias estão expandidas
-  const [expandedSections, setExpandedSections] = useState({
+  const [expandedSections, setExpandedSections] = useState<Record<ModuleCategory, boolean>>({
     geral: true,
     financeiro: true,
     comercial: true,
@@ -121,20 +150,11 @@ const AppContent: React.FC = () => {
     localStorage.setItem('COM_STILLO_VIEW_MODE', val ? 'mobile' : 'desktop');
   };
 
-  if (loading || !isInitialized) {
-    return (
-      <div className="h-screen w-full flex items-center justify-center bg-wine-50 dark:bg-slate-900">
-        <div className="flex flex-col items-center gap-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-wine-700"></div>
-          <p className="text-wine-800 dark:text-wine-100 font-medium animate-pulse">Carregando sistema...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <Login />;
-  }
+  if (loading) return <LoadingScreen message="Carregando sistema..." />;
+  if (!user) return <Login />;
+  if (storeStatus === 'loading') return <LoadingScreen message="Carregando sua loja..." />;
+  if (storeStatus === 'no_store') return <NoStore />;
+  if (!isInitialized) return <LoadingScreen message="Carregando dados da loja..." />;
 
   if (isMobileMode) {
     return (
@@ -146,63 +166,61 @@ const AppContent: React.FC = () => {
 
   if (!hasSelectedModule) {
     return (
-      <Modules 
+      <Modules
         onSelectModule={(view) => {
           navigateTo(view);
           updateHasSelectedModule(true);
-        }} 
+        }}
       />
     );
   }
 
-  // --- PERMISSION LOGIC ---
-  // Prefer the immutable Auth user id. Older profiles may have a missing or
-  // different email, which previously caused valid users to appear as "Sem Função".
-  const currentUserProfile = users.find(u => u.id === user.id) || users.find(u => u.email?.toLowerCase() === user.email?.toLowerCase());
-  const userRoles = Array.isArray(currentUserProfile?.roles) ? currentUserProfile.roles : [];
-
-  // If no profile found (or no roles), default to NO ACCESS (except maybe Dashboard if desired, currently strict)
-  // For safety during dev, if user is the very first one or specific email, maybe allow?
-  // But strictly following user Request: "only selected".
-  // Note: currentUserProfile might be undefined if syncing hasn't happened yet or email doesn't match.
-
-  const hasAccess = (view: AppView): boolean => {
-    if (userRoles.includes('ADMIN')) return true;
-    return userRoles.includes(view);
-  };
-
-  const toggleSection = (section: keyof typeof expandedSections) => {
+  const toggleSection = (section: ModuleCategory) => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
   const handleNavigate = (view: AppView) => {
-    if (hasAccess(view)) {
+    if (canAccessView(view)) {
       navigateTo(view);
       if (window.innerWidth < 768) setSidebarOpen(false);
     } else {
-      alert('Acesso Negado: Você não tem permissão para acessar este módulo.');
+      addNotification('Você não tem acesso a esta tela ou o módulo está desligado.', 'error');
     }
   };
 
-  // Simple Router Switch with Permission Check
+  const handleSwitchStore = async (storeId: string) => {
+    try {
+      await switchStore(storeId);
+      navigateTo('DASHBOARD');
+      addNotification('Loja alterada.', 'success');
+    } catch (err: any) {
+      addNotification(err.message || 'Não foi possível trocar de loja.', 'error');
+    }
+  };
+
+  // Primeira tela que o usuário pode abrir (para o botão "voltar").
+  const firstAllowedView = MODULES.flatMap(m => m.views).find(v => canAccessView(v.view))?.view;
+
   const renderView = () => {
-    if (!hasAccess(currentView)) {
+    if (!canAccessView(currentView)) {
       return (
         <div className="flex flex-col items-center justify-center h-full text-wine-800 dark:text-slate-300">
           <div className="bg-red-100 dark:bg-red-900/20 p-6 rounded-full mb-4">
             <LogOut size={48} className="text-red-500" />
           </div>
-          <h2 className="text-2xl font-bold mb-2">Acesso Negado</h2>
+          <h2 className="text-2xl font-bold mb-2">Tela indisponível</h2>
           <p className="text-center max-w-md">
-            Você não tem permissão para acessar o módulo <strong>{currentView}</strong>.
-            Entre em contato com o administrador do sistema.
+            Esta tela não está liberada para você, ou o módulo dela está desligado nesta loja.
+            Fale com o dono ou gerente da loja.
           </p>
-          <button
-            onClick={() => navigateTo('DASHBOARD')}
-            className="mt-6 px-6 py-2 bg-wine-900 text-white rounded-lg hover:bg-wine-800 transition-colors"
-          >
-            Voltar ao Dashboard
-          </button>
+          {firstAllowedView && (
+            <button
+              onClick={() => navigateTo(firstAllowedView)}
+              className="mt-6 px-6 py-2 bg-wine-900 text-white rounded-lg hover:bg-wine-800 transition-colors"
+            >
+              Voltar
+            </button>
+          )}
         </div>
       );
     }
@@ -219,6 +237,7 @@ const AppContent: React.FC = () => {
       case 'PRODUCTION': return <Production />;
       case 'DELIVERIES': return <Deliveries />;
       case 'SETTINGS': return <SettingsPage />;
+      case 'STORE_ADMIN': return <StoreAdmin />;
       case 'SUPPLIERS': return <Suppliers />;
       case 'REPORTS': return <Reports />;
       case 'QUOTES': return <Quotes />;
@@ -228,42 +247,43 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const NavItem = ({ view, icon, label }: { view: AppView, icon: React.ReactNode, label: string }) => {
-    if (!hasAccess(view)) return null;
+  const NavItem: React.FC<{ view: AppView, icon: React.ReactNode, label: string }> = ({ view, icon, label }) => (
+    <button
+      onClick={() => handleNavigate(view)}
+      className={`w-full flex items-center ${isSidebarOpen ? 'gap-2 sm:gap-3 px-3 sm:px-4' : 'justify-center px-0'} py-2 sm:py-3 rounded-lg transition-colors text-sm sm:text-base ${currentView === view ? 'bg-wine-800 text-white shadow-lg' : 'text-wine-100 hover:bg-wine-800/50'}`}
+      title={!isSidebarOpen ? label : undefined}
+    >
+      <div className="shrink-0 w-5 h-5 sm:w-6 sm:h-6">{icon}</div>
+      {isSidebarOpen && <span className="font-medium truncate">{label}</span>}
+    </button>
+  );
 
-    return (
-      <button
-        onClick={() => handleNavigate(view)}
-        className={`w-full flex items-center ${isSidebarOpen ? 'gap-2 sm:gap-3 px-3 sm:px-4' : 'justify-center px-0'} py-2 sm:py-3 rounded-lg transition-colors text-sm sm:text-base ${currentView === view ? 'bg-wine-800 text-white shadow-lg' : 'text-wine-100 hover:bg-wine-800/50'}`}
-        title={!isSidebarOpen ? label : undefined}
-      >
-        <div className="shrink-0 w-5 h-5 sm:w-6 sm:h-6">{icon}</div>
-        {isSidebarOpen && <span className="font-medium truncate">{label}</span>}
-      </button>
-    );
-  };
+  const NavCategoryBtn = ({ title, isOpen, onClick }: { title: string, isOpen: boolean, onClick: () => void }) => (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center ${isSidebarOpen ? 'justify-between px-3 sm:px-4' : 'justify-center'} py-2 text-xs font-semibold text-wine-300 uppercase tracking-wider hover:text-white transition-colors focus:outline-none mb-1 mt-3 sm:mt-4 first:mt-2`}
+      title={!isSidebarOpen ? title : undefined}
+    >
+      {isSidebarOpen ? (
+        <>
+          <span>{title}</span>
+          {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </>
+      ) : (
+        <div className="w-3 h-px bg-wine-700 rounded-full" />
+      )}
+    </button>
+  );
 
-  const NavCategoryBtn = ({ title, isOpen, onClick, children }: { title: string, isOpen: boolean, onClick: () => void, children?: React.ReactNode }) => {
-    return (
-      <button
-        onClick={onClick}
-        className={`w-full flex items-center ${isSidebarOpen ? 'justify-between px-3 sm:px-4' : 'justify-center'} py-2 text-xs font-semibold text-wine-300 uppercase tracking-wider hover:text-white transition-colors focus:outline-none mb-1 mt-3 sm:mt-4 first:mt-2`}
-        title={!isSidebarOpen ? title : undefined}
-      >
-        {isSidebarOpen ? (
-          <>
-            <span>{title}</span>
-            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          </>
-        ) : (
-          <div className="w-3 h-px bg-wine-700 rounded-full" />
-        )}
-      </button>
-    );
-  };
-
-  // Helper to check if a section should be visible
-  const hasSectionAccess = (views: AppView[]) => views.some(v => hasAccess(v));
+  // Menu montado a partir do registro de módulos: só aparecem telas de
+  // módulos ligados que o papel do usuário pode abrir.
+  const menuSections = MODULE_CATEGORIES.map(cat => ({
+    ...cat,
+    items: MODULES
+      .filter(m => m.category === cat.key)
+      .flatMap(m => m.views)
+      .filter(v => v.inMenu && canAccessView(v.view)),
+  })).filter(section => section.items.length > 0);
 
   return (
     <div className={`flex h-screen bg-wine-50 dark:bg-slate-900 overflow-hidden font-sans transition-colors duration-300 ${darkMode ? 'dark' : ''} print:h-auto print:overflow-visible`}>
@@ -272,7 +292,7 @@ const AppContent: React.FC = () => {
       <aside
         className={`${isSidebarOpen ? 'translate-x-0 w-64' : '-translate-x-full md:translate-x-0 w-64 md:w-20'} fixed md:relative z-30 h-full bg-wine-900 text-white transition-all duration-300 ease-in-out flex flex-col shadow-xl print:hidden overflow-hidden`}
       >
-        <button 
+        <button
           onClick={() => updateHasSelectedModule(false)}
           className={`p-4 sm:p-6 border-b border-wine-800 flex items-center ${isSidebarOpen ? 'gap-3 justify-start' : 'justify-center'} hover:bg-wine-800 transition-colors text-left w-full focus:outline-none flex-shrink-0`}
         >
@@ -285,102 +305,29 @@ const AppContent: React.FC = () => {
         </button>
 
         <nav className="flex-1 overflow-y-auto p-3 sm:p-4 custom-scrollbar">
-              {/* GERAL */}
-          {hasSectionAccess(['DASHBOARD', 'REPORTS']) && (
-            <div>
+          {menuSections.map(section => (
+            <div key={section.key}>
               <NavCategoryBtn
-                title="Geral"
-                isOpen={expandedSections.geral}
-                onClick={() => toggleSection('geral')}
+                title={section.label}
+                isOpen={expandedSections[section.key]}
+                onClick={() => toggleSection(section.key)}
               />
-              {(expandedSections.geral || !isSidebarOpen) && (
+              {(expandedSections[section.key] || !isSidebarOpen) && (
                 <div className="space-y-0.5 sm:space-y-1 animate-fade-in-down">
-                  <NavItem view="DASHBOARD" icon={<LayoutDashboard size={20} />} label="Dashboard" />
-                  <NavItem view="REPORTS" icon={<TrendingUp size={20} />} label="Relatórios" />
+                  {section.items.map(item => (
+                    <NavItem key={item.view} view={item.view} icon={VIEW_ICONS[item.view]} label={item.label} />
+                  ))}
                 </div>
               )}
             </div>
-          )}
-
-          {/* FINANCEIRO */}
-          {hasSectionAccess(['PAYABLES', 'RECEIVABLES', 'BOLETOS']) && (
-            <div>
-              <NavCategoryBtn
-                title="Financeiro"
-                isOpen={expandedSections.financeiro}
-                onClick={() => toggleSection('financeiro')}
-              />
-              {(expandedSections.financeiro || !isSidebarOpen) && (
-                <div className="space-y-0.5 sm:space-y-1 animate-fade-in-down">
-                  <NavItem view="PAYABLES" icon={<ArrowDownCircle size={20} />} label="Contas a Pagar" />
-                  <NavItem view="RECEIVABLES" icon={<ArrowUpCircle size={20} />} label="Contas a Receber" />
-                  <NavItem view="BOLETOS" icon={<FileText size={20} />} label="Boletos" />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* COMERCIAL */}
-          {hasSectionAccess(['SALES', 'SALES_HISTORY', 'QUOTES', 'CUSTOMERS']) && (
-            <div>
-              <NavCategoryBtn
-                title="Comercial"
-                isOpen={expandedSections.comercial}
-                onClick={() => toggleSection('comercial')}
-              />
-              {(expandedSections.comercial || !isSidebarOpen) && (
-                <div className="space-y-0.5 sm:space-y-1 animate-fade-in-down">
-                  <NavItem view="SALES" icon={<ShoppingCart size={20} />} label="Vendas / PDV" />
-                  <NavItem view="SALES_HISTORY" icon={<History size={20} />} label="Histórico de Vendas" />
-                  <NavItem view="QUOTES" icon={<FileSpreadsheet size={20} />} label="Orçamentos" />
-                  <NavItem view="CUSTOMERS" icon={<UserCheck size={20} />} label="Clientes" />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* OPERAÇÃO */}
-          {hasSectionAccess(['INVENTORY', 'PRODUCTION', 'SUPPLIERS', 'ORDERS', 'DELIVERIES']) && (
-            <div>
-              <NavCategoryBtn
-                title="Operação"
-                isOpen={expandedSections.operacao}
-                onClick={() => toggleSection('operacao')}
-              />
-              {(expandedSections.operacao || !isSidebarOpen) && (
-                <div className="space-y-0.5 sm:space-y-1 animate-fade-in-down">
-                  <NavItem view="INVENTORY" icon={<Package size={20} />} label="Estoque" />
-                  <NavItem view="PRODUCTION" icon={<Wrench size={20} />} label="Produção" />
-                  <NavItem view="SUPPLIERS" icon={<Users size={20} />} label="Fornecedores" />
-                  <NavItem view="ORDERS" icon={<Package size={20} />} label="Encomendas" />
-                  <NavItem view="DELIVERIES" icon={<Truck size={20} />} label="Entregas" />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* SISTEMA */}
-          {hasSectionAccess(['IMPORT_EXPORT', 'SETTINGS']) && (
-            <div>
-              <NavCategoryBtn
-                title="Sistema"
-                isOpen={expandedSections.sistema}
-                onClick={() => toggleSection('sistema')}
-              />
-              {(expandedSections.sistema || !isSidebarOpen) && (
-                <div className="space-y-0.5 sm:space-y-1 animate-fade-in-down">
-                  <NavItem view="SETTINGS" icon={<Settings size={20} />} label="Configurações" />
-                </div>
-              )}
-            </div>
-          )}
+          ))}
         </nav>
 
         <div className="p-3 sm:p-4 border-t border-wine-800">
           {isSidebarOpen && (
             <div className="px-3 sm:px-4 py-2 mb-2 text-xs text-wine-300">
               <span className="opacity-75">Acesso: </span>
-              <span className="font-bold text-white uppercase">{userRoles.join(', ') || 'Sem Função'}</span>
+              <span className="font-bold text-white uppercase">{role ? ROLE_LABELS[role] : 'Sem acesso'}</span>
             </div>
           )}
           <button
@@ -404,6 +351,23 @@ const AppContent: React.FC = () => {
           <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="text-wine-600 dark:text-wine-100 hover:text-wine-900 transition-colors focus:outline-none p-2 -ml-2 sm:-ml-4" title="Alternar Menu">
             <Menu size={20} className="sm:w-6 sm:h-6" />
           </button>
+
+          {/* Troca de loja: só aparece para quem participa de mais de uma loja */}
+          {stores.length > 1 && activeStore && (
+            <label className="flex items-center gap-2 text-sm text-wine-800 dark:text-slate-200 min-w-0">
+              <StoreIcon size={18} className="shrink-0 text-wine-600 dark:text-wine-300" />
+              <span className="sr-only">Loja ativa</span>
+              <select
+                value={activeStore.id}
+                onChange={e => handleSwitchStore(e.target.value)}
+                className="max-w-[10rem] sm:max-w-xs truncate bg-wine-50 dark:bg-slate-700 border border-wine-100 dark:border-slate-600 rounded-lg px-2 py-1.5 font-semibold focus:outline-none focus:ring-2 focus:ring-wine-500"
+              >
+                {stores.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <div className="flex items-center gap-2 sm:gap-4 ml-auto">
             <button
@@ -437,7 +401,7 @@ const AppContent: React.FC = () => {
             <div className="text-right hidden sm:block">
               <p className="text-sm font-bold text-wine-900 dark:text-white">{user.email}</p>
               <p className="text-xs text-wine-500 dark:text-slate-400">
-                {currentUserProfile?.department || 'Usuário'}
+                {role ? ROLE_LABELS[role] : 'Usuário'}{activeStore && stores.length <= 1 ? ` · ${activeStore.name}` : ''}
               </p>
             </div>
             <div className="w-9 h-9 sm:w-10 sm:h-10 bg-wine-100 dark:bg-slate-700 text-wine-900 dark:text-wine-100 rounded-full flex items-center justify-center font-bold text-sm sm:text-base">
@@ -465,17 +429,28 @@ const AppContent: React.FC = () => {
   );
 };
 
-const App: React.FC = () => {
+/** Ativa o push automaticamente só nas lojas com o módulo de notificações ligado. */
+const PushGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isModuleEnabled } = useStore();
   return (
-    <AuthProvider>
-      <AppProvider>
-        <PushNotificationProvider autoEnable={true}>
-          <AppContent />
-        </PushNotificationProvider>
-      </AppProvider>
-    </AuthProvider>
+    <PushNotificationProvider autoEnable={isModuleEnabled('push_notifications')}>
+      {children}
+    </PushNotificationProvider>
   );
 };
 
+const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <StoreProvider>
+        <AppProvider>
+          <PushGate>
+            <AppContent />
+          </PushGate>
+        </AppProvider>
+      </StoreProvider>
+    </AuthProvider>
+  );
+};
 
 export default App;

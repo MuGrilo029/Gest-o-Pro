@@ -280,7 +280,8 @@ export type AppView =
   | 'SETTINGS'
   | 'IMPORT_EXPORT'
   | 'QUOTES'
-  | 'STOCK_LOGS';
+  | 'STOCK_LOGS'
+  | 'STORE_ADMIN';
 
 export interface StockMovement {
   id: string;

@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx';
 import { Category, User, CategoryType, UserRole, CategoryGroup, CardFee } from '../types';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useStore } from '../contexts/StoreContext';
 import { formatCurrency, formatISO, getUUID } from '../lib/utils';
 import { PushNotificationStatus } from '../components/PushNotificationProvider';
 
@@ -35,11 +36,10 @@ export const Settings: React.FC = () => {
   } = useAppStore();
   const { user } = useAuth();
 
-  const currentUser = users.find(u => u.email === user?.email);
-  const userRoles = currentUser?.roles || [];
-  const isAdmin = userRoles.includes('ADMIN');
-
-  const hasPermission = (role: string) => isAdmin || userRoles.includes(role as any);
+  // Configurações só abrem para dono/gerente (ver lib/modules.ts), então
+  // todas as abas ficam liberadas para quem chega aqui.
+  const { isManager } = useStore();
+  const hasPermission = (_role: string) => isManager;
 
   const [activeTab, setActiveTab] = useState<'GENERAL' | 'CATEGORIES' | 'USERS' | 'ORDERS' | 'IMPORT_EXPORT' | 'FEES'>('GENERAL');
 
@@ -385,7 +385,7 @@ export const Settings: React.FC = () => {
   const tabs = [
     { id: 'GENERAL', label: 'Empresa', icon: <Building size={18} /> },
     { id: 'CATEGORIES', label: 'Categorias', icon: <Tag size={18} /> },
-    { id: 'USERS', label: 'Usuários', icon: <Users size={18} /> },
+    // A gestão de usuários agora fica em "Loja, Equipe e Módulos" (pages/StoreAdmin.tsx).
     { id: 'ORDERS', label: 'Emissão de Pedido', icon: <FileText size={18} /> },
     { id: 'FEES', label: 'Taxas de Cartão', icon: <DollarSign size={18} /> },
     { id: 'IMPORT_EXPORT', label: 'Importar / Exportar', icon: <FileSpreadsheet size={18} />, permission: 'IMPORT_EXPORT' },

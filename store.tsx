@@ -1,8 +1,9 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Transaction, TransactionStatus, Product, ProductVariant, Supplier, Sale, Delivery, User, Customer, AppView, CompanySettings, Category, CategoryGroup, ProductionOrder, FurnitureSpecs, Notification, Quote, Order, StockMovement, CardFee } from './types';
+import { Transaction, TransactionStatus, Product, ProductVariant, Supplier, Sale, SaleItem, Delivery, User, Customer, AppView, CompanySettings, Category, CategoryGroup, ProductionOrder, FurnitureSpecs, Notification, Quote, Order, StockMovement, CardFee } from './types';
 import { supabase } from './lib/supabase';
 import { parseISO, formatISO, formatBrazilDateTime, isSameMonth, getUUID } from './lib/utils';
+import { useStore } from './contexts/StoreContext';
 
 interface AppState {
   currentView: AppView;
@@ -193,6 +194,11 @@ const MOCK_DATA = {
 } as any;
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Loja ativa e módulos ligados. As automações abaixo só rodam se o módulo
+  // de destino estiver ligado, para que uma venda nunca dependa de um módulo
+  // que a loja não usa (ex.: venda com entrega sem o módulo de Entregas).
+  const { activeStore, status: storeStatus, isModuleEnabled, isManager } = useStore();
+
   const [data, setData] = useState<any>({
     ...MOCK_DATA,
     transactions: [],
@@ -439,10 +445,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Initial Data Fetch from Supabase
+  // Carrega (ou recarrega) os dados sempre que a loja ativa muda.
+  // O RLS do banco devolve apenas os registros da loja ativa.
   useEffect(() => {
+    if (storeStatus !== 'ready' || !activeStore) return;
+    // Limpa os dados da loja anterior antes de carregar a nova.
+    setData((prev: any) => ({
+      ...prev,
+      transactions: [], products: [], suppliers: [], customers: [], sales: [], deliveries: [],
+      productionOrders: [], users: [], quotes: [], orders: [], stockMovements: [],
+      categories: [], categoryGroups: [], cardFees: [], companySettings: MOCK_DATA.companySettings,
+    }));
+    setSimulations([]);
     refreshData();
+  }, [storeStatus, activeStore?.id]);
 
+  useEffect(() => {
     // --- REALTIME SUBSCRIPTIONS ---
     const channel = supabase
       .channel('schema-db-changes')
@@ -1035,6 +1053,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
+    // Módulos ligados nesta loja. Cada automação abaixo só roda se o módulo
+    // dela estiver ligado; a venda em si nunca depende deles.
+    const useOrders = isModuleEnabled('orders');
+    const useFinancial = isModuleEnabled('financial');
+    const useProduction = isModuleEnabled('production');
+    const useDeliveries = isModuleEnabled('deliveries');
+
+    // Sem o módulo de Entregas, toda venda é retirada na loja.
+    if (!useDeliveries && s.deliveryType === 'DELIVERY') {
+      s = { ...s, deliveryType: 'PICKUP' };
+    }
+
     setData((prev: any) => ({ ...prev, sales: [...prev.sales, s] }));
 
     // 1. Insert Sales Record
@@ -1084,7 +1114,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (product) {
             // 2A. Auto-detect "Encomenda" if stock is 0 or less
             // FORCE byOrder to true if stock is insufficient
-            if (product.quantity <= 0) {
+            // Sem o módulo de Encomendas, o item sai do estoque normalmente.
+            if (!useOrders) {
+              processingItem.byOrder = false;
+            } else if (product.quantity <= 0) {
               processingItem.byOrder = true;
             }
 
@@ -1171,8 +1204,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addNotification('Venda finalizada com sucesso', 'success');
       }
 
-      // 3. FINANCIAL INTEGRATION (Auto-Transactions)
-      if (s.cardFeeAmount && s.cardFeeAmount > 0) {
+      // 3. FINANCIAL INTEGRATION (Auto-Transactions) — só com o módulo Financeiro
+      if (useFinancial && s.cardFeeAmount && s.cardFeeAmount > 0) {
         const feeTrans: Transaction = {
           id: getUUID(),
           description: `Taxa de Cartão Venda #${s.id.slice(0, 4)}`,
@@ -1188,7 +1221,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await addTransaction(feeTrans);
       }
 
-      if (s.downPayment && s.downPayment > 0) {
+      if (!useFinancial) {
+        // Sem Financeiro: a venda guarda a forma de pagamento, mas não gera lançamentos.
+      } else if (s.downPayment && s.downPayment > 0) {
         const downTrans: Transaction = {
           id: getUUID(),
           description: `Entrada Venda #${s.id.slice(0, 4)} - ${s.customerName}`,
@@ -1218,7 +1253,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await addTransaction(fullTrans);
       }
 
-      if (s.paymentType === 'PARTIAL' && s.remainingAmount && s.remainingAmount > 0) {
+      if (useFinancial && s.paymentType === 'PARTIAL' && s.remainingAmount && s.remainingAmount > 0) {
         const status = s.remainingStatus === 'PAID' ? 'PAID' : 'PENDING';
         const remTrans: Transaction = {
           id: getUUID(),
@@ -1240,8 +1275,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // --- NEW LOGIC: Create Delivery or Production Order ---
       let hasProduction = false;
 
+      // Sem o módulo de Produção, serviços não geram OS e seguem como itens prontos.
+      const goesToProduction = (i: SaleItem) =>
+        useProduction && (i.category === 'Serviços' || i.serviceType === 'INTERNAL');
+
       for (const item of s.items) {
-        if (item.category === 'Serviços' || item.serviceType === 'INTERNAL') {
+        if (goesToProduction(item)) {
           hasProduction = true;
           // Create Production Order
           const prodOrder: ProductionOrder = {
@@ -1263,9 +1302,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // If it's a delivery sale, create delivery ONLY for items that are ready (In Stock)
       // Services go to Production -> Delivery (on Complete)
       // Out of Stock go to Orders -> Delivery (on Receive)
-      if (s.deliveryType === 'DELIVERY') {
+      if (useDeliveries && s.deliveryType === 'DELIVERY') {
         const readyItems = processedItems.filter(i => {
-          const isService = i.category === 'Serviços' || i.serviceType === 'INTERNAL';
+          const isService = goesToProduction(i);
           const isMsg = i.byOrder; // If it was marked as byOrder, it's not ready
           return !isService && !isMsg;
         });
@@ -1432,6 +1471,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteSale = async (id: string) => {
+    // O banco só permite que dono/gerente exclua vendas. Barrar aqui evita
+    // devolver o estoque de uma venda que o banco não vai apagar.
+    if (!isManager) {
+      addNotification('Apenas dono ou gerente pode excluir vendas.', 'error');
+      return;
+    }
     console.log('📦 STORE: Iniciando exclusão definitiva no banco:', id);
     try {
       // 0. FETCH ITEMS TO RESTORE STOCK (Before Deletion)
@@ -1683,8 +1728,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       let newDeliveries = [...prev.deliveries];
       const order = prev.productionOrders.find((o: ProductionOrder) => o.id === id);
 
-      // --- AUTOMAÇÃO: CRIAR ENTREGA QUANDO CONCLUIR PRODUÇÃO ---
-      if (status === 'COMPLETED' && order) {
+      // --- AUTOMAÇÃO: CRIAR ENTREGA QUANDO CONCLUIR PRODUÇÃO (só com o módulo Entregas) ---
+      if (status === 'COMPLETED' && order && isModuleEnabled('deliveries')) {
         // Verifica se já existe entrega para esta OS para evitar duplicidade
         const existingDelivery = prev.deliveries.find((d: Delivery) => d.productionOrderId === id);
 
@@ -2083,7 +2128,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       // AUTO-DELIVERY: Create delivery record Se for VENDA e entrega for requerida
-      if (o.saleId) {
+      if (o.saleId && isModuleEnabled('deliveries')) {
         const sale = data.sales.find((s: Sale) => s.id === o.saleId);
         if (sale && sale.deliveryType === 'DELIVERY') {
           const saleOrders = data.orders.filter((ord: Order) => ord.saleId === o.saleId);

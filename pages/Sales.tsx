@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../store';
+import { useStore } from '../contexts/StoreContext';
 import { Card, Button, Input, Select, Badge, formatCpfCnpj, formatPhone, Modal } from '../components/UI';
 import {
   ShoppingCart, Trash2, Plus, Minus, Check, Search, User, MapPin, Phone, FileText, Send,
@@ -184,6 +185,8 @@ export const Sales: React.FC = () => {
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
   const [deliveryType, setDeliveryType] = useState<'PICKUP' | 'DELIVERY'>('PICKUP');
+  // Sem o módulo de Entregas, a venda é sempre retirada na loja.
+  const deliveriesEnabled = useStore().isModuleEnabled('deliveries');
   const [deliveryDate, setDeliveryDate] = useState<string>('');
   const [discount, setDiscount] = useState<number>(0);
   const [paymentMethod, setPaymentMethod] = useState('Dinheiro');
@@ -413,7 +416,7 @@ export const Sales: React.FC = () => {
     setCustomerName(c.name);
     setCustomerDoc(c.cpfCnpj || '');
     setCustomerPhone(c.phone || '');
-    if (c.address) { setCustomerAddress(c.address); setDeliveryType('DELIVERY'); }
+    if (c.address) { setCustomerAddress(c.address); if (deliveriesEnabled) setDeliveryType('DELIVERY'); }
     setCustomerSearch(''); setShowCustomerResults(false);
   };
 
@@ -629,10 +632,12 @@ export const Sales: React.FC = () => {
                   <Input label="Nome *" value={customerName} onChange={e => setCustomerName(e.target.value)} />
                   <Input label="Doc (CPF/CNPJ)" value={customerDoc} onChange={e => setCustomerDoc(formatCpfCnpj(e.target.value))} />
                   <Input label="Telefone" value={customerPhone} onChange={e => setCustomerPhone(formatPhone(e.target.value))} maxLength={15} />
-                  <div className="grid grid-cols-2 gap-4">
-                    <Button variant={deliveryType === 'PICKUP' ? 'primary' : 'outline'} onClick={() => setDeliveryType('PICKUP')}>Retirada</Button>
-                    <Button variant={deliveryType === 'DELIVERY' ? 'primary' : 'outline'} onClick={() => setDeliveryType('DELIVERY')}>Entrega</Button>
-                  </div>
+                  {deliveriesEnabled && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <Button variant={deliveryType === 'PICKUP' ? 'primary' : 'outline'} onClick={() => setDeliveryType('PICKUP')}>Retirada</Button>
+                      <Button variant={deliveryType === 'DELIVERY' ? 'primary' : 'outline'} onClick={() => setDeliveryType('DELIVERY')}>Entrega</Button>
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-4">
                     <Input
                       label="Data de Entrega / Retirada"

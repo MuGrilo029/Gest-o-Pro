@@ -34,6 +34,7 @@ import {
 import { MobileCartItem } from './types';
 import { Product, Customer, Sale } from '../../types';
 import { getUUID } from '../../lib/utils';
+import { useStore } from '../../contexts/StoreContext';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -129,6 +130,8 @@ export const MobileSalesPDV: React.FC<MobileSalesPDVProps> = ({
   const [customerComplement, setCustomerComplement] = useState('');
   const [customerCity, setCustomerCity] = useState('');
   const [deliveryType, setDeliveryType] = useState<'PICKUP' | 'DELIVERY'>('PICKUP');
+  // Sem o módulo de Entregas, a venda é sempre retirada na loja.
+  const deliveriesEnabled = useStore().isModuleEnabled('deliveries');
   const [deliveryDate, setDeliveryDate] = useState('');
   const [deliveryTime, setDeliveryTime] = useState('');
   const [observations, setObservations] = useState('');
@@ -200,7 +203,7 @@ export const MobileSalesPDV: React.FC<MobileSalesPDVProps> = ({
     setCustomerEmail(c.email || '');
     if (c.address) {
       setCustomerAddress(c.address);
-      setDeliveryType('DELIVERY');
+      if (deliveriesEnabled) setDeliveryType('DELIVERY');
     }
     setCustomerSearch('');
     setShowCustomerDropdown(false);
@@ -656,7 +659,7 @@ export const MobileSalesPDV: React.FC<MobileSalesPDVProps> = ({
           </div>
 
           {/* Delivery Type */}
-          <div className="flex flex-col gap-1.5">
+          {deliveriesEnabled && <div className="flex flex-col gap-1.5">
             <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1">
               <MapPin size={12} className="text-rose-400" /> Tipo de Entrega
             </label>
@@ -679,7 +682,7 @@ export const MobileSalesPDV: React.FC<MobileSalesPDVProps> = ({
                 </button>
               ))}
             </div>
-          </div>
+          </div>}
 
           {/* Address (when DELIVERY) */}
           {deliveryType === 'DELIVERY' && (
