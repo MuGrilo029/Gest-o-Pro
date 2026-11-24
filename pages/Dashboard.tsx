@@ -400,16 +400,16 @@ export const Dashboard: React.FC = () => {
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={cashFlowData}>
                   <defs>
-                    <linearGradient id="colorInc" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.1} /><stop offset="95%" stopColor="#10b981" stopOpacity={0} /></linearGradient>
-                    <linearGradient id="colorExp" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ef4444" stopOpacity={0.1} /><stop offset="95%" stopColor="#ef4444" stopOpacity={0} /></linearGradient>
+                    <linearGradient id="colorInc" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.35} /><stop offset="95%" stopColor="#10b981" stopOpacity={0} /></linearGradient>
+                    <linearGradient id="colorExp" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ef4444" stopOpacity={0.35} /><stop offset="95%" stopColor="#ef4444" stopOpacity={0} /></linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={(val) => `R$${val >= 1000 ? (val / 1000).toFixed(0) + 'k' : val}`} />
-                  <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }} />
-                  <Legend />
-                  <Area type="monotone" dataKey="receita" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorInc)" />
-                  <Area type="monotone" dataKey="despesa" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorExp)" />
+                  <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="rgba(148,163,184,0.15)" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 500 }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11 }} tickFormatter={(val) => `R$${val >= 1000 ? (val / 1000).toFixed(0) + 'k' : val}`} />
+                  <Tooltip contentStyle={{ borderRadius: '14px', border: '1px solid rgba(148,163,184,0.2)', background: 'rgba(15,23,42,0.95)', color: '#f1f5f9', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.4)' }} />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                  <Area type="monotone" dataKey="receita" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#colorInc)" />
+                  <Area type="monotone" dataKey="despesa" stroke="#ef4444" strokeWidth={2.5} fillOpacity={1} fill="url(#colorExp)" />
                   <Line type="monotone" dataKey="saldo" stroke="#3b82f6" strokeWidth={2} dot={false} strokeDasharray="5 5" />
                 </AreaChart>
               </ResponsiveContainer>
@@ -446,9 +446,10 @@ export const Dashboard: React.FC = () => {
                     <Pie
                       data={revenueVsExpenseData}
                       cx="50%" cy="50%"
-                      innerRadius={60} outerRadius={80}
-                      paddingAngle={5}
+                      innerRadius={70} outerRadius={95}
+                      paddingAngle={3}
                       dataKey="value"
+                      stroke="none"
                     >
                       {revenueVsExpenseData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />

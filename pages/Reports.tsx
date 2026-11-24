@@ -262,6 +262,8 @@ export const Reports: React.FC = () => {
             expensesInGroup: (groupId: string | null) => {
                 return periodExpenses.filter(t => {
                     const category = matchCategory(t.category || '', categories || []);
+                    const group = (categoryGroups || []).find(g => g.id === category?.groupId);
+                    if (isDirectCost(category, t.category || '', group?.name)) return false;
                     if (groupId === 'none') return !category?.groupId;
                     return category?.groupId === groupId;
                 }).reduce((acc: Record<string, number>, t) => {
