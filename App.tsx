@@ -46,6 +46,7 @@ import {
 const lazyPage = <T extends Record<string, any>>(loader: () => Promise<T>, name: keyof T) =>
   React.lazy(() => loader().then(m => ({ default: m[name] as React.ComponentType<any> })));
 const Dashboard = lazyPage(() => import('./pages/Dashboard'), 'Dashboard');
+const AdminDashboard = lazyPage(() => import('./components/AdminDashboard'), 'AdminDashboard');
 const Financial = lazyPage(() => import('./pages/Financial'), 'Financial');
 const Inventory = lazyPage(() => import('./pages/Inventory'), 'Inventory');
 const Sales = lazyPage(() => import('./pages/Sales'), 'Sales');
@@ -123,7 +124,18 @@ const LoadingScreen = ({ message }: { message: string }) => (
 const AppContent: React.FC = () => {
   const { currentView, navigateTo, darkMode, toggleDarkMode, companySettings, isInitialized, refreshData, addNotification } = useAppStore();
   const { user, loading, signOut } = useAuth();
-  const { status: storeStatus, stores, activeStore, role, canAccessView, switchStore, subscription } = useStore();
+  const {
+    status: storeStatus,
+    stores,
+    activeStore,
+    role,
+    isPlatformAdmin,
+    impersonatedStore,
+    stopImpersonation,
+    canAccessView,
+    switchStore,
+    subscription,
+  } = useStore();
   const [isSidebarOpen, setSidebarOpen] = useState(true);
 
   const [expandedSections, setExpandedSections] = useState<Partial<Record<ModuleCategory, boolean>>>(() => {
@@ -234,7 +246,7 @@ const AppContent: React.FC = () => {
     }
 
     switch (currentView) {
-      case 'DASHBOARD': return <Dashboard />;
+      case 'DASHBOARD': return isPlatformAdmin && !impersonatedStore ? <AdminDashboard /> : <Dashboard />;
       case 'PAYABLES': return <Financial type="PAYABLES" />;
       case 'RECEIVABLES': return <Financial type="RECEIVABLES" />;
       case 'BOLETOS': return <Financial type="BOLETOS" />;
@@ -287,14 +299,28 @@ const AppContent: React.FC = () => {
   // Menu montado a partir do registro de módulos: só aparecem telas de
   // módulos ligados que o papel do usuário pode abrir.
   const normalizedQuery = menuQuery.trim().toLowerCase();
-  const menuSections = MODULE_CATEGORIES.map(cat => ({
-    ...cat,
-    items: MODULES
-      .filter(m => m.category === cat.key)
-      .flatMap(m => m.views)
-      .filter(v => v.inMenu && canAccessView(v.view))
-      .filter(v => !normalizedQuery || v.label.toLowerCase().includes(normalizedQuery)),
-  })).filter(section => section.items.length > 0);
+  const isSuperAdminMode = isPlatformAdmin && !impersonatedStore;
+
+  const menuSections = isSuperAdminMode
+    ? [
+        {
+          key: 'sistema' as ModuleCategory,
+          label: 'Administração SaaS',
+          items: [
+            { view: 'DASHBOARD' as AppView, label: 'Painel de Assinaturas' },
+            { view: 'STORE_ADMIN' as AppView, label: 'Clientes & Lojas' },
+            { view: 'SETTINGS' as AppView, label: 'Configurações' },
+          ].filter(v => !normalizedQuery || v.label.toLowerCase().includes(normalizedQuery)),
+        },
+      ].filter(s => s.items.length > 0)
+    : MODULE_CATEGORIES.map(cat => ({
+        ...cat,
+        items: MODULES
+          .filter(m => m.category === cat.key)
+          .flatMap(m => m.views)
+          .filter(v => v.inMenu && canAccessView(v.view))
+          .filter(v => !normalizedQuery || v.label.toLowerCase().includes(normalizedQuery)),
+      })).filter(section => section.items.length > 0);
 
   return (
     <div className={`flex h-screen bg-wine-50 dark:bg-slate-900 overflow-hidden font-sans transition-colors duration-300 ${darkMode ? 'dark' : ''} print:h-auto print:overflow-visible`}>
@@ -310,8 +336,8 @@ const AppContent: React.FC = () => {
         >
           <TrendingUp className="w-6 h-6 sm:w-8 sm:h-8 text-white shrink-0" />
           {isSidebarOpen && (
-            <span className="text-base sm:text-xl font-bold tracking-tight truncate" title={companySettings.name}>
-              {companySettings.name}
+            <span className="text-base sm:text-xl font-bold tracking-tight truncate" title={isSuperAdminMode ? 'Gestão Pro Admin' : companySettings.name}>
+              {isSuperAdminMode ? 'Gestão Pro Admin' : companySettings.name}
             </span>
           )}
         </button>
@@ -383,6 +409,23 @@ const AppContent: React.FC = () => {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col h-full overflow-hidden print:overflow-visible print:h-auto">
+        {/* Banner Obrigatório de Impersonação / Modo Suporte */}
+        {impersonatedStore && (
+          <div className="bg-amber-500 text-zinc-950 font-medium px-4 py-2 flex items-center justify-between text-xs sm:text-sm z-30 shadow-sm shrink-0 border-b border-amber-600">
+            <div className="flex items-center gap-2">
+              <span className="text-base" role="img" aria-label="Aviso">⚠️</span>
+              <span>
+                <strong>Modo Suporte / Impersonação:</strong> Você está visualizando a loja <u>{impersonatedStore.name}</u>.
+              </span>
+            </div>
+            <button
+              onClick={stopImpersonation}
+              className="bg-zinc-950 text-white px-3 py-1 rounded-md text-xs font-bold hover:bg-zinc-800 transition-colors shadow-xs"
+            >
+              Encerrar Suporte e Voltar ao Admin
+            </button>
+          </div>
+        )}
         <SubscriptionBanner />
         {/* Topbar */}
         <header className="h-14 sm:h-16 bg-white dark:bg-slate-800 border-b border-wine-100 dark:border-slate-700 flex items-center justify-between px-3 sm:px-6 shadow-sm z-20 transition-colors duration-200 print:hidden gap-2 sm:gap-4">

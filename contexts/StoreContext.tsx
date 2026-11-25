@@ -85,6 +85,9 @@ interface StoreContextValue {
   role: StoreRole | null;
   isManager: boolean;
   isPlatformAdmin: boolean;
+  impersonatedStore: StoreSummary | null;
+  startImpersonation: (storeId: string) => Promise<void>;
+  stopImpersonation: () => Promise<void>;
   /** Cor da marca da loja ativa (#rrggbb) ou null = paleta padrão. */
   brandColor: string | null;
   setBrandColor: (hex: string | null) => Promise<void>;
@@ -125,6 +128,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [stores, setStores] = useState<StoreSummary[]>([]);
   const [activeStoreId, setActiveStoreId] = useState<string | null>(null);
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+  const [impersonatedStore, setImpersonatedStore] = useState<StoreSummary | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const saved = sessionStorage.getItem('GESTAO_PRO_IMPERSONATED_STORE');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (_) { return null; }
+    }
+    return null;
+  });
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [brandColor, setBrandColorState] = useState<string | null>(null);
   const [storedModules, setStoredModules] = useState<Partial<Record<ModuleKey, boolean>>>({});
@@ -489,6 +500,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (error) throw new Error(error.message);
   }, []);
 
+  const startImpersonation = useCallback(async (storeId: string) => {
+    await switchStore(storeId);
+    const target = stores.find(s => s.id === storeId) || { id: storeId, name: 'Loja', role: 'OWNER', permissions: [] as AppView[] };
+    setImpersonatedStore(target);
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('GESTAO_PRO_IMPERSONATED_STORE', JSON.stringify(target));
+    }
+  }, [stores, switchStore]);
+
+  const stopImpersonation = useCallback(async () => {
+    setImpersonatedStore(null);
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('GESTAO_PRO_IMPERSONATED_STORE');
+    }
+    await reload();
+  }, [reload]);
+
   return (
     <StoreContext.Provider value={{
       status,
@@ -498,6 +526,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       role,
       isManager,
       isPlatformAdmin,
+      impersonatedStore,
+      startImpersonation,
+      stopImpersonation,
       brandColor,
       setBrandColor,
       subscription,

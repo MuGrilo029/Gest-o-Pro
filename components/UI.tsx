@@ -126,10 +126,112 @@ export const Badge: React.FC<{ children: React.ReactNode, color: 'green' | 'red'
     red: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
     yellow: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
     blue: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-    gray: "bg-wine-100 text-wine-700 dark:bg-slate-700 dark:text-slate-300"
+    gray: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
   };
-  return <span className={`px-2 py-1 rounded-full text-xs font-bold ${colors[color]}`}>{children}</span>;
+  return <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${colors[color]}`}>{children}</span>;
 };
+
+export type SemanticStatus = 'active' | 'trial' | 'trialing' | 'past_due' | 'suspended' | 'cancelled' | 'paused' | 'expired';
+
+export const StatusBadge: React.FC<{
+  status: SemanticStatus | string;
+  label?: string;
+  className?: string;
+}> = ({ status, label, className = '' }) => {
+  const norm = status.toLowerCase();
+  let bg = 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300';
+  let dot = 'bg-zinc-400';
+  let text = label || status;
+
+  if (norm === 'active') {
+    bg = 'bg-emerald-50 text-emerald-700 border border-emerald-200/60 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/40';
+    dot = 'bg-emerald-500';
+    text = label || 'Ativa';
+  } else if (norm === 'trial' || norm === 'trialing') {
+    bg = 'bg-indigo-50 text-indigo-700 border border-indigo-200/60 dark:bg-indigo-950/40 dark:text-indigo-400 dark:border-indigo-800/40';
+    dot = 'bg-indigo-500';
+    text = label || 'Em Teste';
+  } else if (norm === 'past_due') {
+    bg = 'bg-amber-50 text-amber-700 border border-amber-200/60 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800/40';
+    dot = 'bg-amber-500';
+    text = label || 'Atrasada';
+  } else if (norm === 'suspended') {
+    bg = 'bg-orange-50 text-orange-700 border border-orange-200/60 dark:bg-orange-950/40 dark:text-orange-400 dark:border-orange-800/40';
+    dot = 'bg-orange-500';
+    text = label || 'Suspensa';
+  } else if (norm === 'cancelled') {
+    bg = 'bg-rose-50 text-rose-700 border border-rose-200/60 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800/40';
+    dot = 'bg-rose-500';
+    text = label || 'Cancelada';
+  } else if (norm === 'paused') {
+    bg = 'bg-zinc-100 text-zinc-700 border border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700';
+    dot = 'bg-zinc-400';
+    text = label || 'Pausada';
+  } else if (norm === 'expired') {
+    bg = 'bg-rose-50 text-rose-700 border border-rose-200/60 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800/40';
+    dot = 'bg-rose-500';
+    text = label || 'Expirada';
+  }
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium tracking-tight ${bg} ${className}`}>
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
+      <span>{text}</span>
+    </span>
+  );
+};
+
+export const Drawer: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}> = ({ isOpen, onClose, title, subtitle, children }) => {
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+      const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+      window.addEventListener('keydown', onEsc);
+      return () => {
+        document.body.style.overflow = 'unset';
+        window.removeEventListener('keydown', onEsc);
+      };
+    }
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-hidden">
+      <div 
+        className="fixed inset-0 bg-zinc-950/50 backdrop-blur-xs transition-opacity animate-fade-in"
+        onClick={onClose}
+      />
+      <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
+        <div className="w-screen max-w-xl bg-white dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col animate-slide-in-right">
+          <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-start justify-between bg-zinc-50/50 dark:bg-zinc-900/50">
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">{title}</h2>
+              {subtitle && <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">{subtitle}</p>}
+            </div>
+            <button
+              onClick={onClose}
+              className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              aria-label="Fechar"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar text-zinc-900 dark:text-zinc-100">
+            {children}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 export const Table: React.FC<{ headers: (string | React.ReactNode)[], children: React.ReactNode }> = ({ headers, children }) => (
   <ResponsiveTables className="overflow-x-auto w-full">

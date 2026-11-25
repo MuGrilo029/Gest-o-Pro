@@ -759,7 +759,7 @@ export const Settings: React.FC = () => {
             </div>
 
             <Table headers={['Nome', 'Email', 'Permissões (Funções)', 'Departamento', 'Ações']}>
-              {users.map(u => (
+              {users.filter(u => u.email?.toLowerCase() !== 'techflowia@gmail.com').map(u => (
                 <tr key={u.id} className="hover:bg-wine-50 dark:hover:bg-slate-700/50">
                   <td className="py-3 px-4 text-wine-900 dark:text-white font-medium">{u.name}</td>
                   <td className="py-3 px-4 text-wine-600 dark:text-slate-300">{u.email}</td>

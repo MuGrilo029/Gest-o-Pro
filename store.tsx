@@ -139,9 +139,7 @@ const MOCK_DATA = {
   sales: [],
   deliveries: [],
   productionOrders: [],
-  users: [
-    { id: '11111111-1111-1111-1111-111111111111', name: 'Administrador', email: 'contato@comstillo.com', roles: ['ADMIN'], department: 'Diretoria' }
-  ],
+  users: [],
   companySettings: {
     name: 'Gestão Pro',
     cnpj: '00.000.000/0001-00',

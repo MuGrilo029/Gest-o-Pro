@@ -157,7 +157,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
   const cartItemsCount = cart.reduce((acc, item) => acc + item.quantity, 0);
 
-  const currentUserEmail = auth?.user?.email || 'gerencia@comstillo.com.br';
+  const currentUserEmail = auth?.user?.email || 'usuario@loja.com';
   const currentUserName = currentUserEmail.split('@')[0].toUpperCase();
 
   return (

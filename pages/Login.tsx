@@ -1,102 +1,111 @@
-
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Lock, Mail, Loader2, AlertCircle } from 'lucide-react';
 
 /**
- * Tela de acesso. Não há cadastro público: as contas são criadas pelo
- * administrador da plataforma (donos e gerentes) ou pelo dono/gerente da
- * loja (vendedores), com e-mail e senha.
+ * Tela de acesso.
+ * Autenticação segura por e-mail e senha, com semântica de formulário
+ * para suporte total ao salvamento de senhas do navegador (Chrome, Edge, etc).
  */
 export const Login: React.FC = () => {
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-    const handleAuth = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        setError(null);
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
 
-        try {
-            const { error } = await supabase.auth.signInWithPassword({ email, password });
-            if (error) {
-                throw new Error(error.message === 'Invalid login credentials'
-                    ? 'E-mail ou senha incorretos.'
-                    : error.message);
-            }
-        } catch (err: any) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    };
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (error) {
+        throw new Error(
+          error.message === 'Invalid login credentials'
+            ? 'E-mail ou senha incorretos.'
+            : error.message
+        );
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-slate-900 px-4">
-            <div className="max-w-md w-full bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-8">
-                <div className="text-center mb-8">
-                    <div className="w-12 h-12 bg-wine-600 rounded-xl flex items-center justify-center mx-auto mb-4 text-white">
-                        <Lock size={24} />
-                    </div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Entrar</h1>
-                    <p className="text-gray-500 dark:text-gray-400 mt-2">Use o e-mail e a senha que você recebeu</p>
-                </div>
-
-                {error && (
-                    <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg flex items-center gap-2 text-sm">
-                        <AlertCircle size={16} />
-                        {error}
-                    </div>
-                )}
-
-                <form onSubmit={handleAuth} className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
-                        <div className="relative">
-                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                            <input
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-wine-500 focus:border-transparent dark:bg-slate-700 dark:text-white transition-all"
-                                placeholder="seu@email.com"
-                                autoComplete="username"
-                                required
-                            />
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Senha</label>
-                        <div className="relative">
-                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                            <input
-                                type="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-wine-500 focus:border-transparent dark:bg-slate-700 dark:text-white transition-all"
-                                placeholder="••••••••"
-                                autoComplete="current-password"
-                                required
-                            />
-                        </div>
-                    </div>
-
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full bg-wine-700 hover:bg-wine-800 text-white font-medium py-2 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {loading ? <Loader2 size={20} className="animate-spin" /> : 'Entrar'}
-                    </button>
-                </form>
-
-                <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                    Não tem acesso? Fale com o responsável pela sua loja.
-                </p>
-            </div>
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 px-4 py-8">
+      <div className="max-w-md w-full bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-8">
+        <div className="text-center mb-8">
+          <div className="w-12 h-12 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-sm">
+            <Lock size={22} />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">Gestão Pro</h1>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Entre com seu e-mail e senha</p>
         </div>
-    );
+
+        {error && (
+          <div className="mb-5 p-3.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-400 rounded-lg flex items-center gap-2.5 text-sm">
+            <AlertCircle size={16} className="shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleAuth} method="POST" action="#" className="space-y-4">
+          <div>
+            <label htmlFor="login-email" className="block text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-1.5">
+              E-mail
+            </label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+              <input
+                id="login-email"
+                name="username"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 text-sm bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 outline-none transition-all"
+                placeholder="seu@email.com"
+                autoComplete="username"
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="login-password" className="block text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-1.5">
+              Senha
+            </label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+              <input
+                id="login-password"
+                name="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 text-sm bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 outline-none transition-all"
+                placeholder="••••••••"
+                autoComplete="current-password"
+                required
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full mt-2 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 font-medium py-2.5 rounded-lg text-sm transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? <Loader2 size={18} className="animate-spin" /> : 'Entrar no sistema'}
+          </button>
+        </form>
+
+        <p className="mt-6 text-center text-xs text-zinc-500 dark:text-zinc-400">
+          Acesso restrito a usuários autorizados. Fale com o responsável da sua loja.
+        </p>
+      </div>
+    </div>
+  );
 };
