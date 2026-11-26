@@ -25,7 +25,7 @@ const endOf = (c: ClientRow): Date | null => (c.effectiveStatus === 'trial' || c
 
 const fmtDate = (d: Date | null) => (d ? d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'Sem prazo');
 
-/** Converte "3h", "7d" etc. escolhidos no formulário em horas/dias para o RPC. */
+/** Converte "1h", "30d" etc. escolhidos no formulário em horas/dias para o RPC. Teste grátis = 1 hora. */
 type Unit = 'hours' | 'days';
 
 export const ClientsPanel: React.FC = () => {
@@ -42,7 +42,7 @@ export const ClientsPanel: React.FC = () => {
   const [storeName, setStoreName] = useState('');
   const [password, setPassword] = useState('');
   const [mode, setMode] = useState<'trial' | 'paid'>('trial');
-  const [amount, setAmount] = useState(3);
+  const [amount, setAmount] = useState(1);
   const [unit, setUnit] = useState<Unit>('hours');
   const [notes, setNotes] = useState('');
   const [modules, setModules] = useState<ModuleKey[]>(
@@ -74,7 +74,7 @@ export const ClientsPanel: React.FC = () => {
 
   const changeMode = (m: 'trial' | 'paid') => {
     setMode(m);
-    if (m === 'trial') { setAmount(3); setUnit('hours'); } else { setAmount(30); setUnit('days'); }
+    if (m === 'trial') { setAmount(1); setUnit('hours'); } else { setAmount(30); setUnit('days'); }
   };
 
   const toggleModule = (key: ModuleKey) => {
@@ -290,8 +290,8 @@ export const ClientsPanel: React.FC = () => {
                       )}
                       {c.status !== 'trial' && (
                         <Button variant="outline" disabled={busy}
-                          onClick={() => run(c.storeId, () => adminSetStatus(c.storeId, 'trial', { hours: 3 }), `Novo teste de 3h iniciado para ${c.name}.`)}>
-                          Novo teste 3h
+                          onClick={() => run(c.storeId, () => adminSetStatus(c.storeId, 'trial', { hours: 1 }), `Novo teste de 1 hora iniciado para ${c.name}.`)}>
+                          Novo teste 1h
                         </Button>
                       )}
                       {c.status === 'trial' && (
