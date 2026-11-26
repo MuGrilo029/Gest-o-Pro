@@ -9,6 +9,8 @@ import { AccessExpired } from './pages/AccessExpired';
 import { DialogHost } from './components/UI';
 import { SubscriptionBanner } from './components/SubscriptionBanner';
 import { Login } from './pages/Login';
+import { NovoLogin } from './pages/NovoLogin';
+import { ClientesArea } from './components/ClientesArea';
 import { MODULES, MODULE_CATEGORIES, ModuleCategory, ROLE_LABELS } from './lib/modules';
 import {
   LayoutDashboard,
@@ -177,9 +179,11 @@ const AppContent: React.FC = () => {
   };
 
   if (loading) return <LoadingScreen message="Carregando sistema..." />;
-  if (!user) return <Login />;
+  if (!user) return window.location.hash === '#novo-login' ? <NovoLogin /> : <Login />;
   if (storeStatus === 'loading') return <LoadingScreen message="Carregando sua loja..." />;
   if (storeStatus === 'no_store') return <NoStore />;
+  // Área de clientes nova (só admin da plataforma). O painel antigo continua em Clientes & Lojas.
+  if (isPlatformAdmin && window.location.hash === '#area-clientes') return <ClientesArea />;
   if (subscription && !subscription.accessOk) return <AccessExpired />;
   if (!isInitialized) return <LoadingScreen message="Carregando dados da loja..." />;
 

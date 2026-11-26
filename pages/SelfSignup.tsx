@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Store, User, Mail, Lock, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { PRIVACY_URL, TERMS_URL } from '../lib/legal';
 
 /** Chave do nome da loja guardada enquanto o e-mail aguarda confirmação (o teste começa no primeiro login). */
 export const PENDING_TRIAL_KEY = 'pendingTrialStoreName';
@@ -19,6 +20,7 @@ interface SelfSignupProps {
  */
 export const SelfSignup: React.FC<SelfSignupProps> = ({ onBack }) => {
   const [form, setForm] = useState({ storeName: '', name: '', email: '', password: '', website: '' });
+  const [accepted, setAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -32,6 +34,11 @@ export const SelfSignup: React.FC<SelfSignupProps> = ({ onBack }) => {
     // Honeypot: campo oculto preenchido por robô. Não mostra erro nem cria nada.
     if (form.website) {
       setInfo('Cadastro recebido. Confira seu e-mail para continuar.');
+      return;
+    }
+
+    if (!accepted) {
+      setError('Aceite os Termos de Uso e a Política de Privacidade para continuar.');
       return;
     }
 
@@ -118,10 +125,7 @@ export const SelfSignup: React.FC<SelfSignupProps> = ({ onBack }) => {
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           {/* Honeypot: fora da tela e fora da ordem de tabulação */}
           <div aria-hidden="true" style={{ position: 'absolute', left: '-10000px', width: 1, height: 1, overflow: 'hidden' }}>
-            <label>
-              Site
-              <input name="website" tabIndex={-1} autoComplete="off" value={form.website} onChange={set('website')} />
-            </label>
+            <input name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" value={form.website} onChange={set('website')} />
           </div>
 
           <div>
@@ -155,6 +159,18 @@ export const SelfSignup: React.FC<SelfSignupProps> = ({ onBack }) => {
               <input id="signup-password" name="password" type="password" value={form.password} onChange={set('password')} className={inputClass} placeholder="••••••••" autoComplete="new-password" required />
             </div>
           </div>
+
+          <label className="flex items-start gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+            <input type="checkbox" checked={accepted} onChange={e => setAccepted(e.target.checked)} className="mt-1" required />
+            <span>
+              Li e aceito os{' '}
+              {TERMS_URL
+                ? <a href={TERMS_URL} target="_blank" rel="noopener noreferrer" className="underline">Termos de Uso</a>
+                : <span>Termos de Uso (publicação pendente)</span>}
+              {' '}e a{' '}
+              <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer" className="underline">Política de Privacidade</a>.
+            </span>
+          </label>
 
           {/* Ponto de integração Cloudflare Turnstile: só renderiza quando houver chave */}
           {TURNSTILE_SITE_KEY && <div className="cf-turnstile" data-sitekey={TURNSTILE_SITE_KEY} />}
