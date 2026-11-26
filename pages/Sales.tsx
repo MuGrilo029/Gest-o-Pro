@@ -232,6 +232,10 @@ export const Sales: React.FC = () => {
         setCustomerName(sale.customerName);
         setCustomerPhone(sale.customerPhone || '');
         setCustomerAddress(sale.customerAddress || '');
+        // A venda não guarda o CPF: busca no cadastro do cliente pelo nome (e telefone, se houver)
+        const sameName = (customers || []).filter(c => c.name === sale.customerName);
+        const savedCustomer = sameName.find(c => c.phone === sale.customerPhone) || sameName[0];
+        setCustomerDoc(savedCustomer?.cpfCnpj || '');
         setDeliveryType(sale.deliveryType as any);
         setDeliveryDate(sale.deliveryDate || '');
 
@@ -278,7 +282,7 @@ export const Sales: React.FC = () => {
       // If editingSaleId is cleared, reset the ref so we can load again later
       loadedSaleIdRef.current = null;
     }
-  }, [editingSaleId, sales, products]);
+  }, [editingSaleId, sales, products, customers]);
 
 
 
@@ -528,6 +532,7 @@ export const Sales: React.FC = () => {
         }
         setLastSale(saleData);
         setIsSuccess(true);
+        setCart([]); // limpa o carrinho: evita que o PDV volte com a venda já salva
       }
     } catch (err) {
       console.error('Erro ao processar venda:', err);

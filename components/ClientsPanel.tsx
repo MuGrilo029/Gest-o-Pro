@@ -7,6 +7,7 @@ import { MODULES, ModuleKey } from '../lib/modules';
 import { formatRemaining } from './SubscriptionBanner';
 import { TempPasswordNotice } from './TempPasswordNotice';
 import { passwordProblem } from '../lib/utils';
+import { requireAudit } from '../lib/adminApi';
 
 const STATUS_LABEL: Record<SubscriptionStatus, string> = {
   trial: 'Teste grátis',
@@ -30,7 +31,23 @@ type Unit = 'hours' | 'days';
 
 export const ClientsPanel: React.FC = () => {
   const { addNotification } = useAppStore();
-  const { legacyMode, adminListClients, adminCreateClient, adminExtend, adminSetStatus, switchStore } = useStore();
+  const { legacyMode, adminListClients, adminCreateClient, adminExtend, adminSetStatus, startImpersonation } = useStore();
+
+  // "Abrir loja": mesmo caminho do "Acessar" do painel admin (confirmação, auditoria obrigatória e modo suporte)
+  const openStore = async (c: ClientRow) => {
+    const ok = await confirmDialog(
+      `Você entrará no modo de suporte visualizando a loja "${c.name}".\nUm registro de auditoria imutável será gravado.\n\nDeseja continuar?`,
+      { title: 'Acessar Loja (Modo Suporte)' }
+    );
+    if (!ok) return;
+    try {
+      await requireAudit(c.storeId, 'impersonate_start', { store_name: c.name, started_at: new Date().toISOString() });
+      await startImpersonation(c.storeId);
+      addNotification(`Agora você está em ${c.name} (modo suporte).`, 'info');
+    } catch (err: any) {
+      addNotification(err.message || 'Erro ao alternar para a loja.', 'error');
+    }
+  };
 
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -302,9 +319,7 @@ export const ClientsPanel: React.FC = () => {
                         </Button>
                       )}
                       <Button variant="outline" disabled={busy}
-                        onClick={() => switchStore(c.storeId).then(
-                          () => addNotification(`Agora você está em ${c.name}. Use "Módulos" para ajustar os módulos dela.`, 'info'),
-                          (err: any) => addNotification(err.message, 'error'))}>
+                        onClick={() => openStore(c)}>
                         <ExternalLink size={14} /> Abrir loja
                       </Button>
                     </div>
