@@ -58,6 +58,13 @@ const PermissionPicker: React.FC<{
  * - Administrador da plataforma: cria qualquer papel e troca qualquer senha.
  * - Dono/gerente: cria, edita, troca senha e remove apenas vendedores.
  */
+/** Mascara o e-mail para quem não é admin da plataforma (ex.: j***@dominio.com). */
+const maskEmail = (email: string): string => {
+  const at = email.indexOf('@');
+  if (at <= 0) return '***';
+  return `${email[0]}***${email.slice(at)}`;
+};
+
 export const TeamPanel: React.FC = () => {
   const { addNotification } = useAppStore();
   const { user } = useAuth();
@@ -176,7 +183,7 @@ export const TeamPanel: React.FC = () => {
                     <p className="font-semibold text-wine-950 dark:text-white truncate">
                       {m.name}{m.userId === user?.id && ' (você)'}
                     </p>
-                    <p className="text-sm text-wine-600 dark:text-slate-400 truncate">{m.email}</p>
+                    <p className="text-sm text-wine-600 dark:text-slate-400 truncate">{isPlatformAdmin ? m.email : maskEmail(m.email)}</p>
                     <div className="mt-1 flex flex-wrap gap-1 items-center">
                       <Badge color={m.role === 'OWNER' ? 'red' : m.role === 'MANAGER' ? 'blue' : 'green'}>{ROLE_LABELS[m.role]}</Badge>
                       {m.role === 'SELLER' && (

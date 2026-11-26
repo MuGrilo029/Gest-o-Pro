@@ -287,7 +287,9 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const fmtCurrency = (cents: number) =>
-    (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    Number.isFinite(cents)
+      ? (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+      : 'Aguardando valores';
 
   return (
     <div className="space-y-6">
@@ -297,7 +299,7 @@ export const AdminDashboard: React.FC = () => {
           <div className="flex items-center gap-3">
             <AlertTriangle size={20} className="shrink-0 text-amber-600 dark:text-amber-400" />
             <p className="text-sm font-medium">
-              <strong>{metrics.pastDue} loja(s)</strong> com licença ou pagamento vencido requerem atenção imediata ({fmtCurrency(metrics.pastDueCents)} em risco).
+              <strong>{metrics.pastDue} loja(s)</strong> com licença ou pagamento vencido requerem atenção imediata.
             </p>
           </div>
           <button
@@ -383,7 +385,7 @@ export const AdminDashboard: React.FC = () => {
             <span className="text-xs font-semibold uppercase tracking-wider">MRR</span>
             <DollarSign size={18} className="text-emerald-500" />
           </div>
-          {metrics.mrrAvailable && metrics.mrrCents !== null ? (
+          {metrics.mrrAvailable && metrics.mrrCents !== null && Number.isFinite(metrics.mrrCents) ? (
             <>
               <div className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 font-mono">{fmtCurrency(metrics.mrrCents)}</div>
               <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">soma do valor mensal das ativas</div>
