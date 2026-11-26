@@ -4,6 +4,9 @@ import { useStore, ClientRow, SubscriptionStatus } from '../contexts/StoreContex
 import { confirmDialog, alertDialog } from './UI';
 import { formatRemaining } from './SubscriptionBanner';
 import { MODULES } from '../lib/modules';
+import { requireAudit } from '../lib/adminApi';
+import { MotivoDialog } from './MotivoDialog';
+import { LojaCadastroForm } from './LojaCadastroForm';
 
 /**
  * Admin de lojas (rota #area-clientes, só admin da plataforma). Segue admin-plano/03-produto-ux.md.
@@ -72,6 +75,7 @@ export const ClientesArea: React.FC = () => {
   const [page, setPage] = useState(1);
   const [openId, setOpenId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('resumo');
+  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -132,20 +136,45 @@ export const ClientesArea: React.FC = () => {
     await runAction(c, 'Prazo estendido', () => adminExtend(c.storeId, { hours }));
   };
 
-  const endTrial = async (c: ClientRow) => {
-    const ok = await confirmDialog(`O teste de "${c.name}" será encerrado e a loja fica sem acesso.`, { title: 'Encerrar teste', confirmLabel: 'Encerrar teste', danger: true });
-    if (!ok) return;
-    await runAction(c, 'Teste encerrado', () => adminSetStatus(c.storeId, 'suspended'));
+  // Ações de risco com motivo obrigatório. A auditoria é gravada ANTES da ação:
+  // se o registro falhar, a ação não acontece (requireAudit lança erro).
+  const [risk, setRisk] = useState<{ c: ClientRow; kind: 'suspend' | 'endTrial' } | null>(null);
+  const [riskError, setRiskError] = useState<string | null>(null);
+  const [riskBusy, setRiskBusy] = useState(false);
+
+  const confirmRisk = async (reason: string) => {
+    if (!risk) return;
+    const { c, kind } = risk;
+    setRiskBusy(true);
+    setRiskError(null);
+    try {
+      await requireAudit(c.storeId, kind === 'suspend' ? 'store_suspended' : 'trial_ended', {
+        reason,
+        before: c.effectiveStatus,
+        after: 'suspended',
+      });
+      await adminSetStatus(c.storeId, 'suspended');
+      setRisk(null);
+      await load();
+      await alertDialog(kind === 'suspend' ? `Loja "${c.name}" suspensa.` : `Teste de "${c.name}" encerrado.`, 'Pronto');
+    } catch (e: any) {
+      setRiskError(e?.message?.includes('auditoria') ? e.message : 'Não foi possível salvar. Nada foi alterado.');
+    } finally {
+      setRiskBusy(false);
+    }
   };
 
+  const endTrial = (c: ClientRow) => { setRiskError(null); setRisk({ c, kind: 'endTrial' }); };
+
   const toggleSuspend = async (c: ClientRow) => {
-    const suspending = c.effectiveStatus !== 'suspended';
-    const ok = await confirmDialog(
-      suspending ? `A loja "${c.name}" perde o acesso agora. Os usuários não conseguem operar.` : `Reativar o acesso de "${c.name}"?`,
-      { title: suspending ? 'Suspender loja' : 'Reativar loja', confirmLabel: suspending ? 'Suspender loja' : 'Reativar', danger: suspending },
-    );
+    if (c.effectiveStatus !== 'suspended') {
+      setRiskError(null);
+      setRisk({ c, kind: 'suspend' });
+      return;
+    }
+    const ok = await confirmDialog(`Reativar o acesso de "${c.name}"?`, { title: 'Reativar loja', confirmLabel: 'Reativar' });
     if (!ok) return;
-    await runAction(c, suspending ? 'Loja suspensa' : 'Loja reativada', () => adminSetStatus(c.storeId, suspending ? 'suspended' : 'active'));
+    await runAction(c, 'Loja reativada', () => adminSetStatus(c.storeId, 'active'));
   };
 
   const openStore = (c: ClientRow) => { setOpenId(c.storeId); setTab('resumo'); };
@@ -168,6 +197,7 @@ export const ClientesArea: React.FC = () => {
             <p className="text-sm text-wine-600 dark:text-slate-400">Área do administrador da plataforma.</p>
           </div>
           <div className="flex gap-2">
+            <button onClick={() => setCreating(true)} className="px-3 py-2 rounded-lg bg-wine-900 text-white text-sm font-semibold">Cadastrar loja</button>
             <button onClick={load} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-wine-200 dark:border-slate-600 text-sm text-wine-800 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-800">
               <RefreshCcw size={14} aria-hidden="true" /> Atualizar
             </button>
@@ -274,6 +304,32 @@ export const ClientesArea: React.FC = () => {
           </>
         )}
       </div>
+
+      {creating && (
+        <div className="fixed inset-0 z-50 bg-black/30 md:flex md:justify-end" onClick={() => setCreating(false)}>
+          <aside role="dialog" aria-label="Cadastrar loja" onClick={e => e.stopPropagation()} className="bg-white dark:bg-slate-800 w-full md:w-[480px] h-full overflow-y-auto shadow-xl p-5">
+            <h2 className="text-lg font-bold text-wine-950 dark:text-white mb-4">Cadastrar loja</h2>
+            <LojaCadastroForm
+              onCancel={() => setCreating(false)}
+              onCreated={() => { setCreating(false); load(); }}
+            />
+          </aside>
+        </div>
+      )}
+
+      {risk && (
+        <MotivoDialog
+          title={risk.kind === 'suspend' ? 'Suspender loja' : 'Encerrar teste'}
+          message={risk.kind === 'suspend'
+            ? `A loja "${risk.c.name}" perde o acesso agora. Os usuários não conseguem operar.`
+            : `O teste de "${risk.c.name}" será encerrado e a loja fica sem acesso.`}
+          confirmLabel={risk.kind === 'suspend' ? 'Suspender loja' : 'Encerrar teste'}
+          busy={riskBusy}
+          error={riskError}
+          onCancel={() => { if (!riskBusy) setRisk(null); }}
+          onConfirm={confirmRisk}
+        />
+      )}
 
       {/* Ficha da loja: painel lateral (desktop) ou tela cheia (celular) */}
       {selected && (
