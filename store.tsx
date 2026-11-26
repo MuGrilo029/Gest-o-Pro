@@ -1370,6 +1370,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updatedSale: Sale = { ...previousSale, ...s };
     setData((prev: any) => ({ ...prev, sales: prev.sales.map((item: Sale) => item.id === s.id ? updatedSale : item) }));
 
+    const rollback = () => {
+      setData((prev: any) => ({ ...prev, sales: prev.sales.map((item: Sale) => item.id === s.id ? previousSale : item) }));
+    };
+
+    // Itens de produto, estoque e total gravados em uma única transação no banco (migração 020: edit_sale_items).
+    // Itens com variante ainda não passam por essa função: o banco exige ajuste manual de estoque.
+    if (updatedSale.items.some(i => i.variantId)) {
+      addNotification('Esta venda tem produto com variante: o ajuste de estoque dela ainda é manual. Não foi salva.', 'error');
+      rollback();
+      return false;
+    }
+
+    const itemsPayload = updatedSale.items.map(i => {
+      // FK Safety: só envia product_id se o produto existir na loja
+      const productExists = data.products.some((p: Product) => p.id === i.productId);
+      return {
+        product_id: (i.productId && productExists) ? i.productId : null,
+        product_name: i.productName || 'Item sem nome',
+        description: i.description,
+        quantity: i.quantity || 1,
+        unit_price: i.unitPrice || 0,
+        category: i.category || 'Geral',
+        service_type: i.serviceType,
+        service_specs: typeof i.serviceSpecs === 'object' ? JSON.stringify(i.serviceSpecs) : i.serviceSpecs,
+        color: i.color,
+        by_order: i.byOrder
+      };
+    });
+
+    const { error: itemsRpcError } = await supabase.rpc('edit_sale_items', {
+      p_sale: s.id,
+      p_items: itemsPayload,
+      p_total: updatedSale.total,
+      p_discount: updatedSale.discount || 0
+    });
+
+    if (itemsRpcError) {
+      console.error('❌ STORE: Erro ao salvar itens da venda (edit_sale_items):', itemsRpcError);
+      addNotification(`Erro ao salvar venda: ${itemsRpcError.message}`, 'error');
+      rollback();
+      return false;
+    }
+
     const { error } = await supabase.from('sales').update({
       customer_name: updatedSale.customerName,
       customer_phone: updatedSale.customerPhone,
@@ -1394,96 +1437,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }).eq('id', s.id);
 
     if (error) {
-      console.error('❌ STORE: Erro ao atualizar cabeçalho da venda:', error);
-      addNotification(`Erro ao salvar venda: ${error.message}`, 'error');
-      // Rollback
-      if (previousSale) {
-        setData((prev: any) => ({ ...prev, sales: prev.sales.map((item: Sale) => item.id === s.id ? previousSale : item) }));
-      }
+      console.error('❌ STORE: Itens salvos, mas erro ao atualizar cabeçalho da venda:', error);
+      addNotification(`Itens salvos, mas o cabeçalho da venda falhou: ${error.message}`, 'error');
+      await refreshData(true);
       return false;
     }
 
-    if (!error) {
-      // Clear and re-insert items to ensure sync
-      const { error: deleteError } = await supabase.from('sale_items').delete().eq('sale_id', s.id);
-
-      if (deleteError) {
-        console.error('❌ STORE: Erro crítico ao limpar itens antigos:', deleteError);
-        addNotification('Erro ao limpar itens antigos. A venda pode estar duplicada.', 'error');
-        return false; // Stop execution to prevent mess
-      }
-
-      console.log(`📦 STORE: Inserindo novos itens para venda ${updatedSale.id}...`, updatedSale.items);
-
-      const items = updatedSale.items.map(i => {
-        // FK Safety: Only send product_id if it exists in the products table
-        // We trust the productId passed from Sales.tsx more now
-        const productExists = data.products.some((p: Product) => p.id === i.productId);
-        // Clean log: Only warn if it's NOT a custom item
-        if (!i.productId && i.category !== 'Personalizado') {
-          console.warn('⚠️ STORE: Item sem productId detectado (update):', i.productName);
-        }
-
-        return {
-          sale_id: s.id,
-          product_id: (i.productId && productExists) ? i.productId : null, // Ensure valid UUID or null
-          product_name: i.productName || 'Item sem nome',
-          description: i.description,
-          quantity: i.quantity || 1,
-          unit_price: i.unitPrice || 0,
-          category: i.category || 'Geral',
-          service_type: i.serviceType,
-          service_specs: typeof i.serviceSpecs === 'object' ? JSON.stringify(i.serviceSpecs) : i.serviceSpecs,
-          color: i.color,
-          variant_id: i.variantId || null,
-          variant_name: i.variantName || null,
-          by_order: i.byOrder
-        };
-      });
-
-      if (items.length > 0) {
-        const { data: updatedItems, error: itemsError } = await supabase.from('sale_items').insert(items).select();
-
-        if (itemsError) {
-          console.error('❌ STORE: Erro ao reinserir itens da venda:', itemsError);
-          addNotification(`Erro ao salvar itens: ${itemsError.message}`, 'error');
-        } else {
-          console.log('✅ STORE: Itens da venda atualizados com sucesso:', updatedItems);
-          addNotification('Venda e produtos atualizados com sucesso!', 'success');
-
-          // Update local state to ensure UI reflects the changes immediately with the new IDs if needed
-          const newLocalItems = updatedItems?.map((ui: any) => ({
-            id: ui.id,
-            productId: ui.product_id,
-            productName: ui.product_name,
-            description: ui.description,
-            quantity: ui.quantity,
-            unitPrice: ui.unit_price,
-            category: ui.category,
-            serviceType: ui.service_type,
-            serviceSpecs: ui.service_specs,
-            color: ui.color,
-            byOrder: ui.by_order
-          }));
-
-          // Update the specific sale in local state with the confirmed items from DB
-          setData((prev: any) => ({
-            ...prev,
-            sales: prev.sales.map((item: Sale) => item.id === s.id ? { ...updatedSale, items: newLocalItems || updatedSale.items } : item)
-          }));
-
-          return true;
-        }
-      } else {
-        console.warn('⚠️ STORE: Venda salva sem itens (lista vazia).');
-        addNotification('Venda salva, mas sem itens.', 'info');
-        return true;
-      }
-    } else {
-      console.error('❌ STORE: Erro ao atualizar cabeçalho da venda:', error);
-      addNotification(`Erro ao salvar venda: ${error.message}`, 'error');
-      return false;
-    }
+    // Recarrega do banco para pegar os novos IDs dos itens
+    await refreshData(true);
+    addNotification('Venda e produtos atualizados com sucesso!', 'success');
+    return true;
   };
 
   const deleteSale = async (id: string) => {
