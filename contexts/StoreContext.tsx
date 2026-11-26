@@ -141,22 +141,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [storedModules, setStoredModules] = useState<Partial<Record<ModuleKey, boolean>>>({});
 
   const loadModules = useCallback(async (storeId: string) => {
-    const { data, error } = await supabase.from('store_modules').select('module_key, enabled, config').eq('store_id', storeId);
-    if (error) {
-      console.error('STORE: erro ao carregar módulos', error);
-      setStoredModules({});
-      setBrandColorState(null);
-      return;
-    }
-    const map: Partial<Record<ModuleKey, boolean>> = {};
-    let color: string | null = null;
-    for (const row of data || []) {
-      // A linha especial 'brand' guarda a cor da loja em config.color (não é um módulo).
-      if (row.module_key === BRAND_ROW_KEY) color = normalizeHex((row.config as any)?.color);
-      else map[row.module_key as ModuleKey] = !!row.enabled;
-    }
-    setStoredModules(map);
-    setBrandColorState(color);
+    // Módulos: só pela RPC store_module_enabled (plano + overrides + core). Nunca pela tabela store_modules.
+    const results = await Promise.all(MODULES.map(async m => {
+      const { data, error } = await supabase.rpc('store_module_enabled', { p_store: storeId, p_module: m.key });
+      if (error) throw error;
+      return [m.key, !!data] as const;
+    })).catch(err => {
+      console.error('STORE: erro ao carregar módulos', err);
+      return null;
+    });
+    setStoredModules(results ? (Object.fromEntries(results) as Partial<Record<ModuleKey, boolean>>) : {});
+
+    // Cor da marca: ainda vem da linha 'brand' de store_modules (não é módulo). Pendente de RPC própria.
+    const { data: brandRow } = await supabase
+      .from('store_modules')
+      .select('config')
+      .eq('store_id', storeId)
+      .eq('module_key', BRAND_ROW_KEY)
+      .maybeSingle();
+    setBrandColorState(brandRow ? normalizeHex((brandRow.config as any)?.color) : null);
   }, []);
 
   /** Antes da migração: deriva papel de profiles.roles e liga os módulos padrão. */
