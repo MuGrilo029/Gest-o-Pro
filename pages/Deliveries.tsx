@@ -4,7 +4,7 @@ import { useAppStore } from '../store';
 import { Card, Button, Modal, Input, Badge, confirmDialog } from '../components/UI';
 import { Truck, MapPin, Phone, Clock, Calendar, CheckCircle, Navigation, Edit2, MessageCircle, Printer, FileText, Trash2, Kanban, RotateCcw } from 'lucide-react';
 import { Delivery } from '../types';
-import { formatISO } from '../lib/utils';
+import { formatISO, formatCurrency } from '../lib/utils';
 
 const getWhatsAppLink = (notes?: string) => {
   const phoneMatch = notes?.match(/\(\d{2}\)\s\d{4,5}-\d{4}/);
@@ -148,7 +148,7 @@ const DeliveryCard: React.FC<{ delivery: Delivery; onEdit: (d: Delivery) => void
   const confirmDelivered = async () => {
     if (pendingBalance > 0) {
       const ok = await confirmDialog(
-        'Esta entrega tem saldo em aberto de R$ ' + pendingBalance.toFixed(2) + '. Confirmar a entrega mesmo assim?',
+        'Esta entrega tem saldo em aberto de R$ ' + formatCurrency(pendingBalance) + '. Confirmar a entrega mesmo assim?',
         { title: 'Saldo em aberto' }
       );
       if (!ok) return;
@@ -174,7 +174,7 @@ const DeliveryCard: React.FC<{ delivery: Delivery; onEdit: (d: Delivery) => void
   return (
     <div className={`bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-wine-100 dark:border-slate-700 hover:shadow-md transition-all group relative animate-fade-in ${borderColor}`}>
       {pendingBalance > 0 && (
-        <div className="mb-2"><Badge color="yellow">Saldo em aberto: R$ {pendingBalance.toFixed(2)}</Badge></div>
+        <div className="mb-2"><Badge color="yellow">Saldo em aberto: R$ {formatCurrency(pendingBalance)}</Badge></div>
       )}
       <div className="flex justify-between items-start mb-3">
         <span className="text-xs font-bold text-wine-900 dark:text-wine-100 bg-wine-50 dark:bg-wine-900/50 px-2 py-1 rounded">
