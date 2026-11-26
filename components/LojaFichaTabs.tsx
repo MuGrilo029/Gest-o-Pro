@@ -80,7 +80,7 @@ export const PlanoModulosTab: React.FC<{ client: ClientRow; onChanged: () => voi
         const { error: err } = await supabase.rpc('admin_set_module_override', {
           p_store: client.storeId,
           p_module: pending.module,
-          p_action: pending.kind,
+          p_action: pending.kind === 'grant' ? 'grant' : 'revoke',
           p_reason: reason,
           p_expires_at: expiresAt ?? null,
         });

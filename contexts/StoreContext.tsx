@@ -307,7 +307,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const { error } = await supabase.rpc('admin_set_module_override', {
       p_store: activeStoreId,
       p_module: key,
-      p_action: enabled ? 'grant' : 'block',
+      p_action: enabled ? 'grant' : 'revoke',
       p_reason: opts.reason,
       p_expires_at: opts.expiresAt ?? null,
     });
