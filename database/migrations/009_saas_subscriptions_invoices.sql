@@ -91,17 +91,29 @@ CREATE POLICY admin_audit_logs_admin_all ON public.admin_audit_logs
     WITH CHECK (public.is_platform_admin());
 
 -- Sincronizar lojas existentes para a tabela de assinaturas (se ainda não existirem)
+-- Preço conforme o plano informado na loja (Início R$ 49, Crescimento R$ 99, Avançado R$ 199).
+-- Loja sem plano reconhecido vira plan_id 'custom' com preço 0: não entra no MRR até o plano ser definido.
 INSERT INTO public.subscriptions (store_id, plan_id, status, price_cents, billing_cycle, current_period_end)
-SELECT 
+SELECT
     s.id,
-    COALESCE(s.plan, 'starter'),
-    CASE 
+    CASE
+        WHEN lower(trim(COALESCE(s.plan, ''))) IN ('início', 'inicio') THEN 'starter'
+        WHEN lower(trim(COALESCE(s.plan, ''))) = 'crescimento' THEN 'pro'
+        WHEN lower(trim(COALESCE(s.plan, ''))) IN ('avançado', 'avancado') THEN 'enterprise'
+        ELSE 'custom'
+    END,
+    CASE
         WHEN s.status = 'trial' THEN 'trialing'
         WHEN s.status = 'suspended' THEN 'paused'
         WHEN s.status = 'expired' THEN 'past_due'
         ELSE 'active'
     END,
-    19900,
+    CASE
+        WHEN lower(trim(COALESCE(s.plan, ''))) IN ('início', 'inicio') THEN 4900
+        WHEN lower(trim(COALESCE(s.plan, ''))) = 'crescimento' THEN 9900
+        WHEN lower(trim(COALESCE(s.plan, ''))) IN ('avançado', 'avancado') THEN 19900
+        ELSE 0
+    END,
     'monthly',
     COALESCE(s.valid_until, s.trial_ends_at, now() + interval '30 days')
 FROM public.stores s

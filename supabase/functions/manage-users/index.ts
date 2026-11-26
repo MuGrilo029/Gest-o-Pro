@@ -66,7 +66,9 @@ Deno.serve(async (req: Request) => {
   });
   const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
-  const { data: userData, error: userError } = await caller.auth.getUser();
+  // getUser precisa do token do chamador: com persistSession false não há sessão guardada.
+  const callerToken = authHeader.replace(/^Bearer\s+/i, '').trim();
+  const { data: userData, error: userError } = await caller.auth.getUser(callerToken);
   if (userError || !userData?.user) return fail('Faça login novamente.', 401);
 
   let body: any;

@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { Transaction, TransactionStatus, Product, ProductVariant, Supplier, Sale, SaleItem, Delivery, User, Customer, AppView, CompanySettings, Category, CategoryGroup, ProductionOrder, FurnitureSpecs, Notification, Quote, Order, StockMovement, CardFee } from './types';
+import { Transaction, TransactionStatus, Product, ProductVariant, Supplier, Sale, SaleItem, Delivery, User, Customer, AppView, CompanySettings, Category, CategoryGroup, ProductionOrder, FurnitureSpecs, Notification, Quote, Order, StockMovement, CardFee, PendingSale } from './types';
 import { supabase } from './lib/supabase';
 import { parseISO, formatISO, formatBrazilDateTime, isSameMonth, getUUID } from './lib/utils';
 import { useStore } from './contexts/StoreContext';
@@ -82,6 +82,7 @@ interface AppState {
   addQuote: (q: Quote) => void;
   updateQuote: (q: Quote) => void;
   deleteQuote: (id: string) => void;
+  linkQuoteToSale: (quoteId: string, saleId: string) => Promise<void>;
 
   addStockMovement: (m: StockMovement) => void;
   registerStockEntry: (productId: string, quantity: number, cost: number, date: string, observations?: string, variantId?: string) => Promise<void>;
@@ -107,8 +108,8 @@ interface AppState {
   deleteSimulationGroup: (groupId: string) => Promise<void>;
   clearSimulations: () => Promise<void>;
   // Pending Sale (from Quote Conversion)
-  pendingSale: Partial<Sale> | null;
-  setPendingSale: (sale: Partial<Sale> | null) => void;
+  pendingSale: PendingSale | null;
+  setPendingSale: (sale: PendingSale | null) => void;
   isInitialized: boolean;
   refreshData: (silent?: boolean) => Promise<void>;
 }
@@ -333,7 +334,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const todayDateOnly = new Date().toISOString().split('T')[0];
       const formattedTransactions = (transData || []).map((t: any) => {
-        let status = t.status || 'PENDING';
+        // Status gravado fora do app pode vir em minúsculo ('paid'); normaliza para os valores do app
+        let status = String(t.status || 'PENDING').toUpperCase();
         const dueDate = t.due_date || t.date || todayStr.split('T')[0];
         
         // Auto-detect LATE status
@@ -372,7 +374,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }));
 
       const formattedProd = (prodData || []).map((p: any) => ({
-        id: p.id, saleId: p.sale_id, customerName: p.customer_name, customerPhone: p.customer_phone, customerAddress: p.customer_address, itemName: p.item_name, specs: p.specs, quantity: p.quantity, date: p.date, status: p.status
+        id: p.id, saleId: p.sale_id, customerName: p.customer_name, customerPhone: p.customer_phone, customerAddress: p.customer_address, itemName: p.item_name, specs: p.specs, quantity: p.quantity, date: p.date, status: p.status,
+        deadline: p.deadline || undefined, totalValue: Number(p.total_value) || 0, downPayment: Number(p.down_payment) || 0, attachments: Array.isArray(p.attachments) ? p.attachments : []
       }));
 
       const formattedDel = (delData || []).map((d: any) => ({
@@ -382,6 +385,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const formattedQuotes = (quotesData || []).map((q: any) => ({
         id: q.id,
         quoteNumber: q.quote_number,
+        status: q.status || 'rascunho',
+        convertedSaleId: q.converted_sale_id || undefined,
         clientName: q.client_name,
         clientPhone: q.client_phone,
         discount: Number(q.discount) || 0,
@@ -578,7 +583,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         due_date: t.dueDate,
         status: t.status,
         has_boleto: t.hasBoleto,
-        account_type: 'FIXED'
+        account_type: 'FIXED',
+        sale_id: t.saleId || null
       }));
 
       const { error } = await supabase.from('transactions').insert(dbTransactions);
@@ -663,7 +669,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
-  const [pendingSale, setPendingSale] = useState<Partial<Sale> | null>(null);
+  const [pendingSale, setPendingSale] = useState<PendingSale | null>(null);
 
   const navigateTo = (view: AppView) => {
     setCurrentView(view);
@@ -730,7 +736,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         has_boleto: tx.hasBoleto,
         attachment_url: tx.attachmentUrl,
         account_type: 'FIXED',
-        payment_method: tx.paymentMethod
+        payment_method: tx.paymentMethod,
+        sale_id: tx.saleId || null
       }));
 
       const { error } = await supabase.from('transactions').insert(dbTransactions);
@@ -766,7 +773,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       account_type: finalTransaction.accountType || 'VARIABLE',
       installments_total: finalTransaction.installmentsTotal,
       current_installment: finalTransaction.currentInstallment,
-      payment_method: finalTransaction.paymentMethod
+      payment_method: finalTransaction.paymentMethod,
+      sale_id: finalTransaction.saleId || null
     });
 
     // Fallback: Se der erro de coluna inexistente, tenta salvar sem o account_type
@@ -783,7 +791,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         status: finalTransaction.status,
         has_boleto: finalTransaction.hasBoleto,
         attachment_url: finalTransaction.attachmentUrl,
-        payment_method: finalTransaction.paymentMethod
+        payment_method: finalTransaction.paymentMethod,
+        sale_id: finalTransaction.saleId || null
       });
       addNotification('Aviso: Funcionalidade de conta fixa indisponível (Banco desatualizado).', 'info');
     } else if (error) {
@@ -798,7 +807,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const remainingAmount = original.amount - paidAmount;
 
-    // 1. Create PAID Transaction
+    // Pagamento total: quita o lançamento original no lugar, sem zerar nem duplicar linha.
+    if (remainingAmount <= 0) {
+      const { error: updateError } = await supabase.from('transactions').update({
+        status: 'PAID',
+        payment_method: method
+      }).eq('id', originalId);
+
+      if (updateError) {
+        addNotification('Erro ao registrar pagamento.', 'error');
+        return;
+      }
+
+      setData((prev: any) => ({
+        ...prev,
+        transactions: prev.transactions.map((t: Transaction) =>
+          t.id === originalId ? { ...t, status: 'PAID', paymentMethod: method } : t
+        )
+      }));
+
+      addNotification(`Pagamento de R$ ${paidAmount.toLocaleString('pt-BR')} registrado!`, 'success');
+      return;
+    }
+
+    // 1. Pagamento parcial: cria lançamento PAID com o valor pago
     const paidTrans: Transaction = {
       ...original,
       id: getUUID(),
@@ -831,24 +863,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
-    // 2. Update Original Transaction
-    if (remainingAmount <= 0) {
-      // If fully paid, just delete or mark original as PAID?
-      // User says: "subtract and lanza new transaction". So if R$ 2000 - R$ 2000, original becomes 0.
-      // Better to update original to remaining and if 0, maybe mark as PAID or handle gracefully.
-      const { error: updateError } = await supabase.from('transactions').update({
-        amount: 0,
-        status: 'PAID'
-      }).eq('id', originalId);
+    // 2. Atualiza saldo restante no lançamento original
+    const { error: updateError } = await supabase.from('transactions').update({
+      amount: remainingAmount
+    }).eq('id', originalId);
 
-      _updateLocalState(originalId, 0, 'PAID', paidTrans);
-    } else {
-      const { error: updateError } = await supabase.from('transactions').update({
-        amount: remainingAmount
-      }).eq('id', originalId);
-
-      _updateLocalState(originalId, remainingAmount, original.status, paidTrans);
+    if (updateError) {
+      addNotification('Erro ao atualizar saldo restante.', 'error');
+      return;
     }
+
+    _updateLocalState(originalId, remainingAmount, original.status, paidTrans);
 
     addNotification(`Pagamento de R$ ${paidAmount.toLocaleString('pt-BR')} registrado!`, 'success');
   };
@@ -1110,13 +1135,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // 2. PREPARE ITEMS & STOCK LOGIC
       // We process items first to determine their final state (byOrder or not)
       const processedItems = [];
+      // Estado de estoque da própria venda: duas linhas do mesmo produto não podem sobrescrever uma à outra
+      const stockWorking = new Map<string, Product>();
 
       for (const item of s.items) {
         // Clone item to avoid mutation issues
         const processingItem = { ...item };
 
         if (processingItem.category !== 'Serviços' && processingItem.serviceType !== 'INTERNAL') {
-          const product = data.products.find((p: Product) => p.id === processingItem.productId);
+          const product = stockWorking.get(processingItem.productId) ?? data.products.find((p: Product) => p.id === processingItem.productId);
 
           if (product) {
             // 2A. Auto-detect "Encomenda" if stock is 0 or less
@@ -1156,7 +1183,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 });
               }
 
-              await updateProduct({ ...product, quantity: newQty, variants: updatedVariants });
+              const updatedProduct: Product = { ...product, quantity: newQty, variants: updatedVariants };
+              stockWorking.set(processingItem.productId, updatedProduct);
+              await updateProduct(updatedProduct);
 
               addStockMovement({
                 id: getUUID(),
@@ -1361,6 +1390,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updatedSale: Sale = { ...previousSale, ...s };
     setData((prev: any) => ({ ...prev, sales: prev.sales.map((item: Sale) => item.id === s.id ? updatedSale : item) }));
 
+    const rollback = () => {
+      setData((prev: any) => ({ ...prev, sales: prev.sales.map((item: Sale) => item.id === s.id ? previousSale : item) }));
+    };
+
+    // Itens de produto, estoque e total gravados em uma única transação no banco (migração 020: edit_sale_items).
+    // Itens com variante ainda não passam por essa função: o banco exige ajuste manual de estoque.
+    if (updatedSale.items.some(i => i.variantId)) {
+      addNotification('Venda com variação: cancele e refaça', 'error');
+      rollback();
+      return false;
+    }
+
+    const itemsPayload = updatedSale.items.map(i => {
+      // FK Safety: só envia product_id se o produto existir na loja
+      const productExists = data.products.some((p: Product) => p.id === i.productId);
+      return {
+        product_id: (i.productId && productExists) ? i.productId : null,
+        product_name: i.productName || 'Item sem nome',
+        description: i.description,
+        quantity: i.quantity || 1,
+        unit_price: i.unitPrice || 0,
+        category: i.category || 'Geral',
+        service_type: i.serviceType,
+        service_specs: typeof i.serviceSpecs === 'object' ? JSON.stringify(i.serviceSpecs) : i.serviceSpecs,
+        color: i.color,
+        by_order: i.byOrder
+      };
+    });
+
+    const { error: itemsRpcError } = await supabase.rpc('edit_sale_items', {
+      p_sale: s.id,
+      p_items: itemsPayload,
+      p_total: updatedSale.total,
+      p_discount: updatedSale.discount || 0
+    });
+
+    if (itemsRpcError) {
+      console.error('❌ STORE: Erro ao salvar itens da venda (edit_sale_items):', itemsRpcError);
+      addNotification(`Erro ao salvar venda: ${itemsRpcError.message}`, 'error');
+      rollback();
+      return false;
+    }
+
     const { error } = await supabase.from('sales').update({
       customer_name: updatedSale.customerName,
       customer_phone: updatedSale.customerPhone,
@@ -1385,96 +1457,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }).eq('id', s.id);
 
     if (error) {
-      console.error('❌ STORE: Erro ao atualizar cabeçalho da venda:', error);
-      addNotification(`Erro ao salvar venda: ${error.message}`, 'error');
-      // Rollback
-      if (previousSale) {
-        setData((prev: any) => ({ ...prev, sales: prev.sales.map((item: Sale) => item.id === s.id ? previousSale : item) }));
-      }
+      console.error('❌ STORE: Itens salvos, mas erro ao atualizar cabeçalho da venda:', error);
+      addNotification(`Itens salvos, mas o cabeçalho da venda falhou: ${error.message}`, 'error');
+      await refreshData(true);
       return false;
     }
 
-    if (!error) {
-      // Clear and re-insert items to ensure sync
-      const { error: deleteError } = await supabase.from('sale_items').delete().eq('sale_id', s.id);
-
-      if (deleteError) {
-        console.error('❌ STORE: Erro crítico ao limpar itens antigos:', deleteError);
-        addNotification('Erro ao limpar itens antigos. A venda pode estar duplicada.', 'error');
-        return false; // Stop execution to prevent mess
-      }
-
-      console.log(`📦 STORE: Inserindo novos itens para venda ${updatedSale.id}...`, updatedSale.items);
-
-      const items = updatedSale.items.map(i => {
-        // FK Safety: Only send product_id if it exists in the products table
-        // We trust the productId passed from Sales.tsx more now
-        const productExists = data.products.some((p: Product) => p.id === i.productId);
-        // Clean log: Only warn if it's NOT a custom item
-        if (!i.productId && i.category !== 'Personalizado') {
-          console.warn('⚠️ STORE: Item sem productId detectado (update):', i.productName);
-        }
-
-        return {
-          sale_id: s.id,
-          product_id: (i.productId && productExists) ? i.productId : null, // Ensure valid UUID or null
-          product_name: i.productName || 'Item sem nome',
-          description: i.description,
-          quantity: i.quantity || 1,
-          unit_price: i.unitPrice || 0,
-          category: i.category || 'Geral',
-          service_type: i.serviceType,
-          service_specs: typeof i.serviceSpecs === 'object' ? JSON.stringify(i.serviceSpecs) : i.serviceSpecs,
-          color: i.color,
-          variant_id: i.variantId || null,
-          variant_name: i.variantName || null,
-          by_order: i.byOrder
-        };
-      });
-
-      if (items.length > 0) {
-        const { data: updatedItems, error: itemsError } = await supabase.from('sale_items').insert(items).select();
-
-        if (itemsError) {
-          console.error('❌ STORE: Erro ao reinserir itens da venda:', itemsError);
-          addNotification(`Erro ao salvar itens: ${itemsError.message}`, 'error');
-        } else {
-          console.log('✅ STORE: Itens da venda atualizados com sucesso:', updatedItems);
-          addNotification('Venda e produtos atualizados com sucesso!', 'success');
-
-          // Update local state to ensure UI reflects the changes immediately with the new IDs if needed
-          const newLocalItems = updatedItems?.map((ui: any) => ({
-            id: ui.id,
-            productId: ui.product_id,
-            productName: ui.product_name,
-            description: ui.description,
-            quantity: ui.quantity,
-            unitPrice: ui.unit_price,
-            category: ui.category,
-            serviceType: ui.service_type,
-            serviceSpecs: ui.service_specs,
-            color: ui.color,
-            byOrder: ui.by_order
-          }));
-
-          // Update the specific sale in local state with the confirmed items from DB
-          setData((prev: any) => ({
-            ...prev,
-            sales: prev.sales.map((item: Sale) => item.id === s.id ? { ...updatedSale, items: newLocalItems || updatedSale.items } : item)
-          }));
-
-          return true;
-        }
-      } else {
-        console.warn('⚠️ STORE: Venda salva sem itens (lista vazia).');
-        addNotification('Venda salva, mas sem itens.', 'info');
-        return true;
-      }
-    } else {
-      console.error('❌ STORE: Erro ao atualizar cabeçalho da venda:', error);
-      addNotification(`Erro ao salvar venda: ${error.message}`, 'error');
-      return false;
-    }
+    // Recarrega do banco para pegar os novos IDs dos itens
+    await refreshData(true);
+    addNotification('Venda e produtos atualizados com sucesso!', 'success');
+    return true;
   };
 
   const deleteSale = async (id: string) => {
@@ -1490,21 +1482,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const { data: saleItems } = await supabase.from('sale_items').select('*').eq('sale_id', id);
 
       if (saleItems) {
+        const stockWorking = new Map<string, Product>();
         for (const item of saleItems) {
           // Restore stock ONLY if it was NOT made to order (i.e. taken from stock)
           if (!item.by_order && item.product_id) {
-            const product = data.products.find((p: Product) => p.id === item.product_id);
+            const product = stockWorking.get(item.product_id) ?? data.products.find((p: Product) => p.id === item.product_id);
             if (product) {
               const restoredVariants = item.variant_id && product.variants
                 ? product.variants.map(v => v.id === item.variant_id
                   ? { ...v, quantity: v.quantity + item.quantity }
                   : v)
                 : product.variants;
-              await updateProduct({
+              const restoredProduct: Product = {
                 ...product,
                 quantity: product.quantity + item.quantity,
                 variants: restoredVariants
-              });
+              };
+              stockWorking.set(item.product_id, restoredProduct);
+              await updateProduct(restoredProduct);
               // Log return
               addStockMovement({
                 id: getUUID(),
@@ -1721,7 +1716,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       specs: p.specs,
       quantity: p.quantity,
       date: p.date,
-      status: p.status
+      status: p.status,
+      // Só vão no insert quando preenchidos (produção padrão não envia)
+      ...(p.deadline ? { deadline: p.deadline } : {}),
+      ...(p.totalValue !== undefined ? { total_value: p.totalValue } : {}),
+      ...(p.downPayment !== undefined ? { down_payment: p.downPayment } : {}),
+      ...(p.attachments?.length ? { attachments: p.attachments } : {})
     });
   };
 
@@ -1988,6 +1988,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const { error } = await supabase.from('quotes').insert({
       id: q.id,
       quote_number: q.quoteNumber,
+      status: q.status || 'rascunho',
       client_name: q.clientName,
       client_phone: q.clientPhone,
       discount: q.discount,
@@ -2042,7 +2043,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateQuote = async (q: Quote) => {
     setData((prev: any) => ({ ...prev, quotes: prev.quotes.map((item: Quote) => item.id === q.id ? q : item) }));
 
+    // converted_sale_id só é gravado quando existe: salvar o orçamento não pode apagar o vínculo com a venda
     const { error } = await supabase.from('quotes').update({
+      ...(q.status ? { status: q.status } : {}),
+      ...(q.convertedSaleId ? { converted_sale_id: q.convertedSaleId } : {}),
       client_name: q.clientName,
       client_phone: q.clientPhone,
       discount: q.discount,
@@ -2087,6 +2091,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return true;
     }
     return false;
+  };
+
+  // Grava o vínculo orçamento → venda (chamado pelo PDV após salvar a venda convertida)
+  const linkQuoteToSale = async (quoteId: string, saleId: string) => {
+    setData((prev: any) => ({ ...prev, quotes: prev.quotes.map((q: Quote) => q.id === quoteId ? { ...q, convertedSaleId: saleId } : q) }));
+    const { error } = await supabase.from('quotes').update({ converted_sale_id: saleId }).eq('id', quoteId);
+    if (error) console.error('Error linking quote to sale:', error);
   };
 
   const deleteQuote = async (id: string) => {
@@ -2428,6 +2439,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addQuote,
       updateQuote,
       deleteQuote,
+      linkQuoteToSale,
       addStockMovement,
       registerStockEntry,
       importData,

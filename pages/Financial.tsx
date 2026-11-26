@@ -231,7 +231,8 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
     return {
       total: filteredData.reduce((acc, t) => acc + t.amount, 0),
       paid: filteredData.filter(t => t.status === 'PAID').reduce((acc, t) => acc + t.amount, 0),
-      pending: filteredData.filter(t => t.status === 'PENDING' || t.status === 'LATE').reduce((acc, t) => acc + t.amount, 0),
+      // A Vencer = pendente não vencido; Em Atraso = pendente vencido (status LATE). Sem sobreposição.
+      pending: filteredData.filter(t => t.status === 'PENDING').reduce((acc, t) => acc + t.amount, 0),
       late: filteredData.filter(t => t.status === 'LATE').reduce((acc, t) => acc + t.amount, 0),
     };
   }, [filteredData]);
@@ -281,10 +282,12 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
       color: "bg-emerald-100 text-emerald-800 border-emerald-200"
     };
 
-    if (totals.late > 0) {
+    // Atrasos de todo o histórico deste tipo (não só do mês filtrado)
+    const lateAllCount = transactions.filter(t => t.type === (isPayable ? 'EXPENSE' : 'INCOME') && t.status === 'LATE').reduce((acc, t) => acc + t.amount, 0);
+    if (lateAllCount > 0 || totals.late > 0) {
       aiTip = {
         title: "Atenção aos Juros",
-        text: `Você possui R$ ${totals.late.toLocaleString('pt-BR')} em atraso. Priorize estes pagamentos para estancar perdas com multas.`,
+        text: `Você possui R$ ${Math.max(lateAllCount, totals.late).toLocaleString('pt-BR')} em atraso. Priorize estes pagamentos para estancar perdas com multas.`,
         color: "bg-red-100 text-red-800 border-red-200"
       };
     } else if (totals.pending > (totals.paid * 2) && totals.paid > 0) {
@@ -877,8 +880,7 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
                         title="Marcar como concluído"
                         onClick={(e) => { 
                           e.stopPropagation(); 
-                          const todayStr = formatISO(new Date());
-                          updateTransaction({ ...t, status: 'PAID', dueDate: todayStr, date: todayStr }); 
+                          updateTransaction({ ...t, status: 'PAID' }); 
                         }}
                         className="p-1 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-900/30 rounded"
                       >

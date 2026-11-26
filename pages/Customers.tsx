@@ -1,13 +1,20 @@
 
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
-import { Card, Button, Input, Table, Modal, EmptyState, PageHeader, formatCpfCnpj, formatPhone } from '../components/UI';
+import { Card, Button, Input, Table, Modal, EmptyState, PageHeader, formatCpfCnpj, formatPhone, alertDialog } from '../components/UI';
 import { Plus, Trash2, Search, Phone, MapPin, Mail, MessageCircle } from 'lucide-react';
 import { Customer } from '../types';
 import { getUUID } from '../lib/utils';
+import { docProblem, findDocOwner } from '../lib/documents';
 
 export const Customers: React.FC = () => {
   const { customers, addCustomer, updateCustomer, deleteCustomer } = useAppStore();
+  const docError = (doc?: string, selfId?: string): string | null => {
+    const problem = docProblem(doc || '');
+    if (problem) return problem;
+    const owner = findDocOwner(doc || '', customers || [], selfId);
+    return owner ? `Este CPF/CNPJ já está cadastrado para ${owner.name}.` : null;
+  };
   const [showForm, setShowForm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [formData, setFormData] = useState<Partial<Customer>>({});
@@ -24,7 +31,15 @@ export const Customers: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name) return;
+    if (!formData.name?.trim()) {
+      alertDialog('Informe o nome do cliente.');
+      return;
+    }
+    const problem = docError(formData.cpfCnpj, formData.id);
+    if (problem) {
+      alertDialog(problem);
+      return;
+    }
 
     const customerData = {
       id: formData.id || getUUID(),

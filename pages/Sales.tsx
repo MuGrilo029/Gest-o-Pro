@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { Product, Customer, FurnitureSpecs, CardFee } from '../types';
 import { formatBrazilDateTime, formatISO, formatDisplayDate, getUUID, formatCurrency } from '../lib/utils';
+import { docProblem, findDocOwner } from '../lib/documents';
 
 interface CartItem extends Product {
   cartQty: number;
@@ -169,7 +170,7 @@ const ConfirmationView: React.FC<{
 
 // --- MAIN COMPONENT: SALES ---
 export const Sales: React.FC = () => {
-  const { products, addSale, updateSale, sales, editingSaleId, setEditingSaleId, pendingSale, setPendingSale, customers, addCustomer, navigateTo, categories: allCategories, companySettings, currentView, cardFees } = useAppStore();
+  const { products, addSale, updateSale, sales, editingSaleId, setEditingSaleId, pendingSale, setPendingSale, customers, addCustomer, navigateTo, categories: allCategories, companySettings, currentView, cardFees, linkQuoteToSale } = useAppStore();
   const [step, setStep] = useState<SalesStep>('POS');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('Todos');
@@ -201,6 +202,9 @@ export const Sales: React.FC = () => {
   const [installmentsRemaining, setInstallmentsRemaining] = useState(1);
   const [isSuccess, setIsSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const savingRef = React.useRef(false); // trava síncrona contra duplo envio da venda
+  // Orçamento de origem (quando a venda veio de "Vender" em Orçamentos); fica só neste PDV
+  const [sourceQuoteId, setSourceQuoteId] = useState<string | null>(null);
   const [lastSale, setLastSale] = useState<any>(null); // To store the last sale for printing
   const [variantProduct, setVariantProduct] = useState<Product | null>(null);
   const [selectedVariantId, setSelectedVariantId] = useState('');
@@ -223,13 +227,16 @@ export const Sales: React.FC = () => {
     if (editingSaleId && editingSaleId !== loadedSaleIdRef.current) {
       const sale = sales.find(s => s.id === editingSaleId);
       if (sale) {
-        console.log('📦 SALES: Carregando venda para edição:', sale.id);
         loadedSaleIdRef.current = editingSaleId; // Mark as loaded
 
         // Populate Customer
         setCustomerName(sale.customerName);
         setCustomerPhone(sale.customerPhone || '');
         setCustomerAddress(sale.customerAddress || '');
+        // A venda não guarda o CPF: busca no cadastro do cliente pelo nome (e telefone, se houver)
+        const sameName = (customers || []).filter(c => c.name === sale.customerName);
+        const savedCustomer = sameName.find(c => c.phone === sale.customerPhone) || sameName[0];
+        setCustomerDoc(savedCustomer?.cpfCnpj || '');
         setDeliveryType(sale.deliveryType as any);
         setDeliveryDate(sale.deliveryDate || '');
 
@@ -276,14 +283,14 @@ export const Sales: React.FC = () => {
       // If editingSaleId is cleared, reset the ref so we can load again later
       loadedSaleIdRef.current = null;
     }
-  }, [editingSaleId, sales, products]);
+  }, [editingSaleId, sales, products, customers]);
 
 
 
   // --- HANDLE PENDING SALE (FROM QUOTE CONVERSION) ---
   useEffect(() => {
     if (pendingSale) {
-      console.log('📦 SALES: Carregando venda pendente (Orçamento):', pendingSale);
+      if (pendingSale.quoteId) setSourceQuoteId(pendingSale.quoteId);
 
       // Populate Customer
       if (pendingSale.customerName) setCustomerName(pendingSale.customerName);
@@ -373,7 +380,9 @@ export const Sales: React.FC = () => {
   // Desconto sempre entre 0 e o subtotal (valor negativo aumentaria o total).
   const effectiveDiscount = Math.min(Math.max(0, Number(discount) || 0), subtotal);
   const total = Math.max(0, subtotal - effectiveDiscount);
-  const remainingAmount = Math.max(0, total - downPayment);
+  // Entrada sempre entre 0 e o total (valor negativo ou acima do total distorce o restante)
+  const effectiveDownPayment = Math.min(Math.max(0, Number(downPayment) || 0), total);
+  const remainingAmount = Math.max(0, total - effectiveDownPayment);
 
   const calculateFeeAmount = (amount: number, method: string, inst: number) => {
     if (!method.toLowerCase().includes('cartão')) return 0;
@@ -392,7 +401,9 @@ export const Sales: React.FC = () => {
       }
 
       const exists = prev.find(item => item.productId === product.id && item.variantId === variantId && !item.serviceType);
-      if (exists) return prev.map(item => item.productId === product.id && item.variantId === variantId && !item.serviceType ? { ...item, cartQty: item.cartQty + 1 } : item);
+      // Respeita o estoque disponível (mesma regra do botão +); sem estoque cadastrado, segue como encomenda
+      const stock = variant ? variant.quantity : product.quantity;
+      if (exists) return prev.map(item => item.productId === product.id && item.variantId === variantId && !item.serviceType ? { ...item, cartQty: stock > 0 ? Math.min(item.cartQty + 1, stock) : item.cartQty + 1 } : item);
       return [...prev, { ...product, price: variant?.price ?? product.price, cartQty: 1, productId: product.id, id: getUUID(), variantId, variantName: variant?.name }];
     });
   };
@@ -449,7 +460,8 @@ export const Sales: React.FC = () => {
   };
 
   const processSale = async (finalCart: CartItem[]) => {
-    if (isLoading) return;
+    if (savingRef.current) return;
+    savingRef.current = true;
     setIsLoading(true);
 
     const saleData = {
@@ -489,14 +501,14 @@ export const Sales: React.FC = () => {
       downPaymentMethod: isPartialPayment ? downPaymentMethod : undefined,
       remainingPaymentMethod: isPartialPayment ? remainingPaymentMethod : undefined,
       paymentType: isPartialPayment ? 'PARTIAL' : 'FULL',
-      downPayment: isPartialPayment ? downPayment : undefined,
+      downPayment: isPartialPayment ? effectiveDownPayment : undefined,
       remainingAmount: isPartialPayment ? remainingAmount : undefined,
       remainingStatus: isPartialPayment ? (isRemainingPaidNow ? 'PAID' : 'PENDING') : undefined,
       status: 'COMPLETED' as const,
       observations,
       deliveryDate: deliveryDate || undefined,
       cardFeeAmount: isPartialPayment
-        ? (calculateFeeAmount(downPayment, downPaymentMethod, installmentsDown) + calculateFeeAmount(remainingAmount, remainingPaymentMethod, installmentsRemaining))
+        ? (calculateFeeAmount(effectiveDownPayment, downPaymentMethod, installmentsDown) + calculateFeeAmount(remainingAmount, remainingPaymentMethod, installmentsRemaining))
         : calculateFeeAmount(total, paymentMethod, installments),
       cardInstallments: isPartialPayment ? installmentsRemaining : installments,
       cardFeePercentage: isPartialPayment
@@ -514,23 +526,34 @@ export const Sales: React.FC = () => {
       }
 
       if (success) {
+        // Venda criada a partir de um orçamento: grava o vínculo orçamento → venda
+        if (!editingSaleId && sourceQuoteId) {
+          await linkQuoteToSale(sourceQuoteId, saleData.id);
+          setSourceQuoteId(null);
+        }
         setLastSale(saleData);
         setIsSuccess(true);
+        setCart([]); // limpa o carrinho: evita que o PDV volte com a venda já salva
       }
     } catch (err) {
       console.error('Erro ao processar venda:', err);
     } finally {
+      savingRef.current = false;
       setIsLoading(false);
     }
   };
 
   const resetSalesFlow = () => {
     setStep('POS'); setCart([]); setDiscount(0); setCustomerName(''); setCustomerDoc(''); setCustomerPhone(''); setCustomerAddress(''); setDeliveryType('PICKUP'); setDeliveryDate(''); setIsPartialPayment(false); setDownPayment(0); setObservations(''); setIsSuccess(false); setLastSale(null);
-    setEditingSaleId(null);
+    setEditingSaleId(null); setSourceQuoteId(null);
   };
 
   const handleSaveNewCustomer = () => {
     if (!newCustomerForm.name) return alertDialog('Nome é obrigatório');
+    const docProblemFound = docProblem(newCustomerForm.doc);
+    if (docProblemFound) return alertDialog(docProblemFound);
+    const docOwner = findDocOwner(newCustomerForm.doc, customers || []);
+    if (docOwner) return alertDialog(`Este CPF/CNPJ já está cadastrado para ${docOwner.name}.`);
 
     const newCustomer: Customer = {
       id: getUUID(),
@@ -685,7 +708,7 @@ export const Sales: React.FC = () => {
                             ))}
                           </Select>
                         )}
-                        <Input label="Valor da Entrada" type="number" value={downPayment} onChange={e => setDownPayment(Number(e.target.value))} />
+                        <Input label="Valor da Entrada" type="number" min={0} max={total} value={downPayment} onChange={e => setDownPayment(Math.min(Math.max(0, Number(e.target.value) || 0), total))} />
                         {downPaymentMethod.toLowerCase().includes('cartão') && (
                           <div className="p-2 bg-white dark:bg-slate-800 rounded border border-wine-100 text-xs text-wine-600">
                             Taxa estimada: {formatCurrency(calculateFeeAmount(downPayment, downPaymentMethod, installmentsDown))}
@@ -759,7 +782,7 @@ export const Sales: React.FC = () => {
                   <Button className="w-full h-14 text-lg font-bold" onClick={() => {
                     if (editingSaleId) {
                       if (!customerName || (deliveryType === 'DELIVERY' && !customerAddress)) return alertDialog('Preencha os dados do cliente.');
-                      processSale(cart);
+                      // A venda é gravada só na confirmação (evita processar duas vezes)
                       setStep('CONFIRM');
                     } else {
                       goToConfirmation();
@@ -926,7 +949,7 @@ export const Sales: React.FC = () => {
                 </>
               )}
               {effectiveDiscount > 0 && <div className="flex justify-between text-sm text-gray-500"><span>Subtotal</span><span>R$ {subtotal.toFixed(2)}</span></div>}
-              <div className="flex justify-between font-bold text-xl"><span>Total</span><span>R$ {(editingSaleId ? subtotal : total).toFixed(2)}</span></div>
+              <div className="flex justify-between font-bold text-xl"><span>Total</span><span>R$ {total.toFixed(2)}</span></div>
               {editingSaleId ? (
                 <Button className="w-full h-12" disabled={cart.length === 0} onClick={() => startFinalize('FULL')}>Prosseguir <ArrowRight className="ml-2" /></Button>
               ) : (
@@ -935,7 +958,7 @@ export const Sales: React.FC = () => {
                     <Check size={20} /> Finalizar venda
                   </Button>
                   <Button variant="outline" className="w-full" disabled={cart.length === 0} onClick={() => startFinalize('FULL')}>
-                    Mais opções (entrega, pagamento parcial)
+                    Continuar
                   </Button>
                 </>
               )}

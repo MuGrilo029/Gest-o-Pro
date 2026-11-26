@@ -9,7 +9,9 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useStore } from '../contexts/StoreContext';
 import { formatCurrency, formatISO, getUUID } from '../lib/utils';
+import { DEFAULT_BRAND_COLOR } from '../lib/brand';
 import { PushNotificationStatus } from '../components/PushNotificationProvider';
+import { PlanChoice } from '../components/PlanChoice';
 
 
 export const Settings: React.FC = () => {
@@ -37,8 +39,12 @@ export const Settings: React.FC = () => {
 
   // Configurações só abrem para dono/gerente (ver lib/modules.ts), então
   // todas as abas ficam liberadas para quem chega aqui.
-  const { isManager, brandColor, setBrandColor, legacyMode } = useStore();
-  const [brandDraft, setBrandDraft] = useState<string>(brandColor || '#7d3a46');
+  const { isManager, brandColor, setBrandColor, legacyMode, isPlatformAdmin, impersonatedStore } = useStore();
+  // Admin da plataforma sem personificar loja: esconde abas que só o lojista deve editar.
+  const isPlatformAdminView = isPlatformAdmin && !impersonatedStore;
+  // Admin da plataforma: sem gestão interna da loja (categorias, taxas, empresa, emissão, importação)
+const ADMIN_HIDDEN_TABS = ['GENERAL', 'CATEGORIES', 'ORDERS', 'FEES', 'IMPORT_EXPORT'];
+  const [brandDraft, setBrandDraft] = useState<string>(brandColor || DEFAULT_BRAND_COLOR);
   useEffect(() => { if (brandColor) setBrandDraft(brandColor); }, [brandColor]);
   const hasPermission = (_role: string) => isManager;
 
@@ -411,7 +417,9 @@ export const Settings: React.FC = () => {
     { id: 'ORDERS', label: 'Emissão de Pedido', icon: <FileText size={18} /> },
     { id: 'FEES', label: 'Taxas de Cartão', icon: <DollarSign size={18} /> },
     { id: 'IMPORT_EXPORT', label: 'Importar / Exportar', icon: <FileSpreadsheet size={18} />, permission: 'IMPORT_EXPORT' },
-  ].filter(tab => !tab.permission || hasPermission(tab.permission));
+  ].filter(tab => !tab.permission || hasPermission(tab.permission))
+    // No modo admin da plataforma, categorias e taxas de cartão ficam só nas lojas (o lojista edita pela própria tela).
+    .filter(tab => !(isPlatformAdminView && ADMIN_HIDDEN_TABS.includes(tab.id)));
 
   // Helper to render category lists
   const renderCategoryList = (title: string, type: CategoryType, icon: React.ReactNode, colorClass: string) => (
@@ -493,6 +501,8 @@ export const Settings: React.FC = () => {
         <SettingsIcon /> Configurações do Sistema
       </h2>
 
+      <PlanChoice />
+
       {/* Tabs */}
       <div className="flex flex-wrap gap-2 border-b border-wine-200 dark:border-slate-700 pb-1">
         {tabs.map(tab => (
@@ -555,7 +565,7 @@ export const Settings: React.FC = () => {
                   try { await setBrandColor(brandDraft); alertDialog('Cor da marca aplicada.'); } catch (err: any) { alertDialog(err.message); }
                 }}>Aplicar cor</Button>
                 <Button type="button" variant="outline" disabled={legacyMode || !brandColor} onClick={async () => {
-                  try { await setBrandColor(null); setBrandDraft('#7d3a46'); } catch (err: any) { alertDialog(err.message); }
+                  try { await setBrandColor(null); setBrandDraft(DEFAULT_BRAND_COLOR); } catch (err: any) { alertDialog(err.message); }
                 }}>Voltar ao padrão</Button>
               </div>
               <p className="text-xs text-wine-500 dark:text-slate-400 mt-1">Muda os botões, menus e destaques desta loja. Vale para todos que usam a loja.</p>

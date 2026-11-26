@@ -2,6 +2,7 @@ import React from 'react';
 import { Clock, LogOut, RefreshCcw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useStore } from '../contexts/StoreContext';
+import { PlanChoice } from '../components/PlanChoice';
 
 /**
  * Tela exibida quando a loja ativa está com o teste encerrado, a validade
@@ -22,6 +23,30 @@ export const AccessExpired: React.FC = () => {
       : 'O tempo de uso contratado desta loja acabou. Seus dados continuam guardados: assim que o acesso for renovado, tudo volta ao normal.';
 
   const otherStores = stores.filter(s => s.id !== activeStore?.id);
+
+  // Teste encerrado: o dono escolhe o plano e paga; a tela de venda não aparece aqui.
+  if (wasTrial) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-wine-50 dark:bg-slate-900 px-4 py-8">
+        <div className="w-full max-w-4xl space-y-6">
+          <div className="w-full max-w-md mx-auto bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-wine-100 dark:border-slate-700 p-6 text-center">
+            <h1 className="text-2xl font-bold text-wine-950 dark:text-white mb-2">{title}</h1>
+            {activeStore && <p className="text-sm text-wine-500 dark:text-slate-400 mb-2">Loja: <strong>{activeStore.name}</strong></p>}
+            <p className="text-wine-600 dark:text-slate-400 text-sm">{text}</p>
+          </div>
+          <PlanChoice ended />
+          <div className="text-center space-y-2">
+            <button onClick={() => reload()} className="text-sm text-wine-800 dark:text-slate-200 underline">Já paguei, verificar de novo</button>
+            <div>
+              <button onClick={() => signOut()} className="text-sm text-wine-600 dark:text-slate-400 hover:text-red-600 transition-colors">
+                <LogOut size={14} className="inline mr-1" /> Sair
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-wine-50 dark:bg-slate-900 px-4">

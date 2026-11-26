@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeHex, buildBrandPalette } from '../lib/brand';
+import { normalizeHex, buildBrandPalette, DEFAULT_BRAND_COLOR } from '../lib/brand';
 
 describe('cor da marca', () => {
   it('normaliza hex válido e recusa inválido', () => {
@@ -22,5 +22,10 @@ describe('cor da marca', () => {
 
   it('devolve null para cor inválida', () => {
     expect(buildBrandPalette('xyz')).toBeNull();
+  });
+
+  it('cor padrão do sistema é válida e igual ao indigo-700 do index.css', () => {
+    expect(normalizeHex(DEFAULT_BRAND_COLOR)).toBe(DEFAULT_BRAND_COLOR);
+    expect(buildBrandPalette(DEFAULT_BRAND_COLOR)![700]).toBe('79 70 229');
   });
 });

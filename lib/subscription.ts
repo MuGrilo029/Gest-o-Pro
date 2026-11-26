@@ -8,8 +8,8 @@
 
 export type SubscriptionStatus = 'trial' | 'active' | 'suspended' | 'expired';
 
-/** Duração padrão do teste grátis: 3 horas de uso. */
-export const TRIAL_DURATION_HOURS = 3;
+/** Duração padrão do teste grátis: 1 hora de uso (novos trials; lojas existentes mantêm o prazo gravado). */
+export const TRIAL_DURATION_HOURS = 1;
 export const TRIAL_DURATION_MS = TRIAL_DURATION_HOURS * 60 * 60 * 1000;
 
 /** Fim do teste grátis a partir do início (precisão de milissegundos). */

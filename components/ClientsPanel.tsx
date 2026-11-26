@@ -7,6 +7,8 @@ import { MODULES, ModuleKey } from '../lib/modules';
 import { formatRemaining } from './SubscriptionBanner';
 import { TempPasswordNotice } from './TempPasswordNotice';
 import { passwordProblem } from '../lib/utils';
+import { requireAudit } from '../lib/adminApi';
+import { TRIAL_DURATION_HOURS } from '../lib/subscription';
 
 const STATUS_LABEL: Record<SubscriptionStatus, string> = {
   trial: 'Teste grátis',
@@ -25,12 +27,28 @@ const endOf = (c: ClientRow): Date | null => (c.effectiveStatus === 'trial' || c
 
 const fmtDate = (d: Date | null) => (d ? d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'Sem prazo');
 
-/** Converte "3h", "7d" etc. escolhidos no formulário em horas/dias para o RPC. */
+/** Converte "1h", "30d" etc. escolhidos no formulário em horas/dias para o RPC. Teste grátis = 1 hora. */
 type Unit = 'hours' | 'days';
 
 export const ClientsPanel: React.FC = () => {
   const { addNotification } = useAppStore();
-  const { legacyMode, adminListClients, adminCreateClient, adminExtend, adminSetStatus, switchStore } = useStore();
+  const { legacyMode, adminListClients, adminCreateClient, adminExtend, adminSetStatus, startImpersonation } = useStore();
+
+  // "Abrir loja": mesmo caminho do "Acessar" do painel admin (confirmação, auditoria obrigatória e modo suporte)
+  const openStore = async (c: ClientRow) => {
+    const ok = await confirmDialog(
+      `Você entrará no modo de suporte visualizando a loja "${c.name}".\nUm registro de auditoria imutável será gravado.\n\nDeseja continuar?`,
+      { title: 'Acessar Loja (Modo Suporte)' }
+    );
+    if (!ok) return;
+    try {
+      await requireAudit(c.storeId, 'impersonate_start', { store_name: c.name, started_at: new Date().toISOString() });
+      await startImpersonation(c.storeId);
+      addNotification(`Agora você está em ${c.name} (modo suporte).`, 'info');
+    } catch (err: any) {
+      addNotification(err.message || 'Erro ao alternar para a loja.', 'error');
+    }
+  };
 
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,7 +60,7 @@ export const ClientsPanel: React.FC = () => {
   const [storeName, setStoreName] = useState('');
   const [password, setPassword] = useState('');
   const [mode, setMode] = useState<'trial' | 'paid'>('trial');
-  const [amount, setAmount] = useState(3);
+  const [amount, setAmount] = useState(1);
   const [unit, setUnit] = useState<Unit>('hours');
   const [notes, setNotes] = useState('');
   const [modules, setModules] = useState<ModuleKey[]>(
@@ -74,7 +92,7 @@ export const ClientsPanel: React.FC = () => {
 
   const changeMode = (m: 'trial' | 'paid') => {
     setMode(m);
-    if (m === 'trial') { setAmount(3); setUnit('hours'); } else { setAmount(30); setUnit('days'); }
+    if (m === 'trial') { setAmount(1); setUnit('hours'); } else { setAmount(30); setUnit('days'); }
   };
 
   const toggleModule = (key: ModuleKey) => {
@@ -97,8 +115,9 @@ export const ClientsPanel: React.FC = () => {
       if (pwdIssue) throw new Error(pwdIssue);
       const res = await adminCreateClient({
         email, storeName, password, modules, mode, notes,
-        hours: unit === 'hours' ? amount : undefined,
-        days: unit === 'days' ? amount : undefined,
+        // Teste grátis é sempre de 1 hora; a duração livre vale só para plano pago.
+        hours: mode === 'trial' ? TRIAL_DURATION_HOURS : (unit === 'hours' ? amount : undefined),
+        days: mode === 'trial' ? undefined : (unit === 'days' ? amount : undefined),
       });
       if (res.temporaryPassword) setTempCred({ email, password: res.temporaryPassword });
       addNotification(
@@ -173,16 +192,20 @@ export const ClientsPanel: React.FC = () => {
               ))}
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <Input label="Duração" type="number" min={1} value={amount}
-                onChange={e => setAmount(Math.max(1, Number(e.target.value) || 1))} />
-              <Select label="Unidade" value={unit} onChange={e => setUnit(e.target.value as Unit)}>
-                <option value="hours">Horas</option>
-                <option value="days">Dias</option>
-              </Select>
+              {mode === 'paid' && (
+                <>
+                  <Input label="Duração" type="number" min={1} value={amount}
+                    onChange={e => setAmount(Math.max(1, Number(e.target.value) || 1))} />
+                  <Select label="Unidade" value={unit} onChange={e => setUnit(e.target.value as Unit)}>
+                    <option value="hours">Horas</option>
+                    <option value="days">Dias</option>
+                  </Select>
+                </>
+              )}
             </div>
             <p className="text-xs text-wine-500 dark:text-slate-400">
               {mode === 'trial'
-                ? 'O teste conta a partir de agora e bloqueia o acesso da loja ao terminar.'
+                ? 'Teste grátis fixo de 1 hora: conta a partir de agora e bloqueia o acesso ao terminar. Para mais tempo, use "Estender" depois.'
                 : 'O tempo pago conta a partir de agora; você pode estender depois.'}
             </p>
 
@@ -290,8 +313,8 @@ export const ClientsPanel: React.FC = () => {
                       )}
                       {c.status !== 'trial' && (
                         <Button variant="outline" disabled={busy}
-                          onClick={() => run(c.storeId, () => adminSetStatus(c.storeId, 'trial', { hours: 3 }), `Novo teste de 3h iniciado para ${c.name}.`)}>
-                          Novo teste 3h
+                          onClick={() => run(c.storeId, () => adminSetStatus(c.storeId, 'trial', { hours: 1 }), `Novo teste de 1 hora iniciado para ${c.name}.`)}>
+                          Novo teste 1h
                         </Button>
                       )}
                       {c.status === 'trial' && (
@@ -302,9 +325,7 @@ export const ClientsPanel: React.FC = () => {
                         </Button>
                       )}
                       <Button variant="outline" disabled={busy}
-                        onClick={() => switchStore(c.storeId).then(
-                          () => addNotification(`Agora você está em ${c.name}. Use "Módulos" para ajustar os módulos dela.`, 'info'),
-                          (err: any) => addNotification(err.message, 'error'))}>
+                        onClick={() => openStore(c)}>
                         <ExternalLink size={14} /> Abrir loja
                       </Button>
                     </div>

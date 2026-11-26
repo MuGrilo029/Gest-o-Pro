@@ -72,12 +72,14 @@ export const SalesHistory: React.FC = () => {
     }, [sales, searchTerm, statusFilter, timeRange, selectedMonth, selectedYear, customStart, customEnd]);
 
     const summary = useMemo(() => {
-        const totalRevenue = filteredSales.reduce((acc, s) => acc + s.total, 0);
-        const count = filteredSales.length;
+        // Faturamento, ticket e lucro consideram só vendas concluídas (canceladas não entram)
+        const completedSales = filteredSales.filter(s => s.status === 'COMPLETED');
+        const totalRevenue = completedSales.reduce((acc, s) => acc + s.total, 0);
+        const count = completedSales.length;
         const avgTicket = count > 0 ? totalRevenue / count : 0;
 
         let totalCost = 0;
-        filteredSales.forEach(s => {
+        completedSales.forEach(s => {
             s.items.forEach(item => {
                 const prod = products.find(p => p.id === item.productId);
                 totalCost += (item.quantity * (prod?.cost || 0));
@@ -170,7 +172,7 @@ export const SalesHistory: React.FC = () => {
                                     onChange={(e) => setSelectedYear(Number(e.target.value))}
                                     className="bg-transparent border border-wine-100 dark:border-slate-600 rounded-lg px-3 py-2 text-xs font-bold text-wine-900 dark:text-white"
                                 >
-                                    {[2024, 2025, 2026].map(year => <option key={year} value={year}>{year}</option>)}
+                                    {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(year => <option key={year} value={year}>{year}</option>)}
                                 </select>
                             </>
                         )}

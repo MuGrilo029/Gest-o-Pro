@@ -1,6 +1,7 @@
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { clearAppCaches, clearSessionData } from '../lib/cacheSecurity';
 import { Session, User } from '@supabase/supabase-js';
 
 interface AuthContextType {
@@ -16,10 +17,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [session, setSession] = useState<Session | null>(null);
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
+    // Id do usuário anterior: se mudar, os caches da conta anterior são apagados
+    const lastUserIdRef = useRef<string | null>(null);
 
     useEffect(() => {
         // Get initial session
         supabase.auth.getSession().then(({ data: { session } }) => {
+            lastUserIdRef.current = session?.user?.id ?? null;
             setSession(session);
             setUser(session?.user ?? null);
             setLoading(false);
@@ -29,7 +33,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         // Listen for changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            const nextUserId = session?.user?.id ?? null;
+            const prevUserId = lastUserIdRef.current;
+            if (event === 'SIGNED_OUT' || (prevUserId && nextUserId && prevUserId !== nextUserId)) {
+                void clearAppCaches();
+                clearSessionData();
+            }
+            lastUserIdRef.current = nextUserId;
             setSession(session);
             setUser(session?.user ?? null);
             setLoading(false);
@@ -39,6 +50,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, []);
 
     const signOut = async () => {
+        try {
+            await clearAppCaches();
+        } catch (err) {
+            console.warn('Falha ao limpar caches no logout; seguindo com o logout:', err);
+        }
+        clearSessionData();
         await supabase.auth.signOut();
     };
 

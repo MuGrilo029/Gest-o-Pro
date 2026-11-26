@@ -10,7 +10,7 @@ export { formatRemaining };
  * últimos 7 dias. O administrador da plataforma não vê.
  */
 export const SubscriptionBanner: React.FC<{ floating?: boolean }> = ({ floating = false }) => {
-  const { subscription, isPlatformAdmin } = useStore();
+  const { subscription, isPlatformAdmin, isManager } = useStore();
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -18,7 +18,8 @@ export const SubscriptionBanner: React.FC<{ floating?: boolean }> = ({ floating 
     return () => window.clearInterval(t);
   }, []);
 
-  if (isPlatformAdmin || !subscription?.accessOk || !subscription.endsAt) return null;
+  // Vendedor não vê assinatura nem prazo do plano (só dono e gerente)
+  if (isPlatformAdmin || !isManager || !subscription?.accessOk || !subscription.endsAt) return null;
   const remaining = subscription.endsAt.getTime() - now;
   const isTrial = subscription.status === 'trial';
   if (!isTrial && remaining > 7 * 86400 * 1000) return null;

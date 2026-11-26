@@ -4,7 +4,7 @@ import { useAppStore } from '../store';
 import { Card, Button, Modal, Input, Badge, confirmDialog } from '../components/UI';
 import { Truck, MapPin, Phone, Clock, Calendar, CheckCircle, Navigation, Edit2, MessageCircle, Printer, FileText, Trash2, Kanban, RotateCcw } from 'lucide-react';
 import { Delivery } from '../types';
-import { formatISO } from '../lib/utils';
+import { formatISO, formatCurrency } from '../lib/utils';
 
 const getWhatsAppLink = (notes?: string) => {
   const phoneMatch = notes?.match(/\(\d{2}\)\s\d{4,5}-\d{4}/);
@@ -137,8 +137,24 @@ const getDeliveryStatusColor = (delivery: Delivery) => {
 };
 
 const DeliveryCard: React.FC<{ delivery: Delivery; onEdit: (d: Delivery) => void; onPrint: (d: Delivery) => void }> = ({ delivery, onEdit, onPrint }) => {
-  const { updateDeliveryStatus, deleteDelivery } = useAppStore();
+  const { updateDeliveryStatus, deleteDelivery, sales, transactions } = useAppStore();
   const waLink = getWhatsAppLink(delivery.notes);
+  // Saldo em aberto da venda ligada à entrega: total menos pagamentos concluídos vinculados a ela
+  const linkedSale = delivery.saleId ? sales.find(s => s.id === delivery.saleId) : undefined;
+  const paidForSale = linkedSale
+    ? transactions.filter(t => t.type === 'INCOME' && t.status === 'PAID' && t.saleId === linkedSale.id).reduce((acc, t) => acc + t.amount, 0)
+    : 0;
+  const pendingBalance = linkedSale ? Math.max(0, linkedSale.total - paidForSale) : 0;
+  const confirmDelivered = async () => {
+    if (pendingBalance > 0) {
+      const ok = await confirmDialog(
+        'Esta entrega tem saldo em aberto de R$ ' + formatCurrency(pendingBalance) + '. Confirmar a entrega mesmo assim?',
+        { title: 'Saldo em aberto' }
+      );
+      if (!ok) return;
+    }
+    updateDeliveryStatus(delivery.id, 'DELIVERED');
+  };
   const statusColor = getDeliveryStatusColor(delivery);
 
   const borderColor = {
@@ -157,6 +173,9 @@ const DeliveryCard: React.FC<{ delivery: Delivery; onEdit: (d: Delivery) => void
 
   return (
     <div className={`bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-wine-100 dark:border-slate-700 hover:shadow-md transition-all group relative animate-fade-in ${borderColor}`}>
+      {pendingBalance > 0 && (
+        <div className="mb-2"><Badge color="yellow">Saldo em aberto: R$ {formatCurrency(pendingBalance)}</Badge></div>
+      )}
       <div className="flex justify-between items-start mb-3">
         <span className="text-xs font-bold text-wine-900 dark:text-wine-100 bg-wine-50 dark:bg-wine-900/50 px-2 py-1 rounded">
           #{delivery.id.slice(0, 4)}
@@ -249,7 +268,7 @@ const DeliveryCard: React.FC<{ delivery: Delivery; onEdit: (d: Delivery) => void
                 <RotateCcw size={16} />
               </button>
               <Button
-                onClick={() => updateDeliveryStatus(delivery.id, 'DELIVERED')}
+                onClick={confirmDelivered}
                 className="text-xs px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
               >
                 <CheckCircle size={14} className="mr-1" /> Entregue

@@ -9,6 +9,8 @@ import { AccessExpired } from './pages/AccessExpired';
 import { DialogHost } from './components/UI';
 import { SubscriptionBanner } from './components/SubscriptionBanner';
 import { Login } from './pages/Login';
+import { NovoLogin } from './pages/NovoLogin';
+import { ClientesArea } from './components/ClientesArea';
 import { MODULES, MODULE_CATEGORIES, ModuleCategory, ROLE_LABELS } from './lib/modules';
 import {
   LayoutDashboard,
@@ -177,9 +179,12 @@ const AppContent: React.FC = () => {
   };
 
   if (loading) return <LoadingScreen message="Carregando sistema..." />;
-  if (!user) return <Login />;
+  if (!user) return window.location.hash === '#novo-login' ? <NovoLogin /> : <Login />;
   if (storeStatus === 'loading') return <LoadingScreen message="Carregando sua loja..." />;
   if (storeStatus === 'no_store') return <NoStore />;
+  // Área de clientes nova (só admin da plataforma). O painel antigo continua em Clientes & Lojas.
+  // DialogHost precisa estar montado aqui: confirmDialog/alertDialog da área de Admin dependem dele.
+  if (isPlatformAdmin && window.location.hash === '#area-clientes') return <><DialogHost /><ClientesArea /></>;
   if (subscription && !subscription.accessOk) return <AccessExpired />;
   if (!isInitialized) return <LoadingScreen message="Carregando dados da loja..." />;
 
@@ -223,6 +228,8 @@ const AppContent: React.FC = () => {
 
   const renderView = () => {
     if (!canAccessView(currentView)) {
+      // Permissões da loja ainda carregando (sem papel): espera em vez de mostrar erro.
+      if (!activeStore) return <LoadingScreen message="Abrindo sua loja..." />;
       return (
         <div className="flex flex-col items-center justify-center h-full text-wine-800 dark:text-slate-300">
           <div className="bg-red-100 dark:bg-red-900/20 p-6 rounded-full mb-4">

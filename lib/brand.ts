@@ -19,6 +19,12 @@ export const getBrandInitials = (name: string | null | undefined, fallback = 'Ge
 
 export const BRAND_SHADES = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950] as const;
 
+/**
+ * Cor padrão do sistema para lojas sem cor própria (sem linha `brand` em store_modules).
+ * É o indigo-700 da paleta em index.css, então lojas sem cor continuam com a mesma aparência.
+ */
+export const DEFAULT_BRAND_COLOR = '#4f46e5';
+
 /** Aceita #rgb ou #rrggbb; devolve #rrggbb minúsculo ou null. */
 export const normalizeHex = (value: string | null | undefined): string | null => {
   const v = (value || '').trim().toLowerCase();
