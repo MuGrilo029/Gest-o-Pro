@@ -8,6 +8,7 @@ import { formatRemaining } from './SubscriptionBanner';
 import { TempPasswordNotice } from './TempPasswordNotice';
 import { passwordProblem } from '../lib/utils';
 import { requireAudit } from '../lib/adminApi';
+import { TRIAL_DURATION_HOURS } from '../lib/subscription';
 
 const STATUS_LABEL: Record<SubscriptionStatus, string> = {
   trial: 'Teste grátis',
@@ -114,8 +115,9 @@ export const ClientsPanel: React.FC = () => {
       if (pwdIssue) throw new Error(pwdIssue);
       const res = await adminCreateClient({
         email, storeName, password, modules, mode, notes,
-        hours: unit === 'hours' ? amount : undefined,
-        days: unit === 'days' ? amount : undefined,
+        // Teste grátis é sempre de 1 hora; a duração livre vale só para plano pago.
+        hours: mode === 'trial' ? TRIAL_DURATION_HOURS : (unit === 'hours' ? amount : undefined),
+        days: mode === 'trial' ? undefined : (unit === 'days' ? amount : undefined),
       });
       if (res.temporaryPassword) setTempCred({ email, password: res.temporaryPassword });
       addNotification(
@@ -190,16 +192,20 @@ export const ClientsPanel: React.FC = () => {
               ))}
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <Input label="Duração" type="number" min={1} value={amount}
-                onChange={e => setAmount(Math.max(1, Number(e.target.value) || 1))} />
-              <Select label="Unidade" value={unit} onChange={e => setUnit(e.target.value as Unit)}>
-                <option value="hours">Horas</option>
-                <option value="days">Dias</option>
-              </Select>
+              {mode === 'paid' && (
+                <>
+                  <Input label="Duração" type="number" min={1} value={amount}
+                    onChange={e => setAmount(Math.max(1, Number(e.target.value) || 1))} />
+                  <Select label="Unidade" value={unit} onChange={e => setUnit(e.target.value as Unit)}>
+                    <option value="hours">Horas</option>
+                    <option value="days">Dias</option>
+                  </Select>
+                </>
+              )}
             </div>
             <p className="text-xs text-wine-500 dark:text-slate-400">
               {mode === 'trial'
-                ? 'O teste conta a partir de agora e bloqueia o acesso da loja ao terminar.'
+                ? 'Teste grátis fixo de 1 hora: conta a partir de agora e bloqueia o acesso ao terminar. Para mais tempo, use "Estender" depois.'
                 : 'O tempo pago conta a partir de agora; você pode estender depois.'}
             </p>
 
