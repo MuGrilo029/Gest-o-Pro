@@ -152,20 +152,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
     setStoredModules(results ? (Object.fromEntries(results) as Partial<Record<ModuleKey, boolean>>) : {});
 
-    // Cor da marca: o acesso ('brand') é verificado por store_module_enabled.
-    // O valor da cor ainda sai da linha 'brand' de store_modules: não há RPC que devolva a cor (pendente no Back-end).
+    // Cor da marca: acesso ('brand') por store_module_enabled e valor pela RPC store_brand_color (migração 047).
     const { data: brandOn, error: brandErr } = await supabase.rpc('store_module_enabled', { p_store: storeId, p_module: BRAND_ROW_KEY });
     if (brandErr || !brandOn) {
       setBrandColorState(null);
       return;
     }
-    const { data: brandRow } = await supabase
-      .from('store_modules')
-      .select('config')
-      .eq('store_id', storeId)
-      .eq('module_key', BRAND_ROW_KEY)
-      .maybeSingle();
-    setBrandColorState(brandRow ? normalizeHex((brandRow.config as any)?.color) : null);
+    const { data: colorData, error: colorErr } = await supabase.rpc('store_brand_color', { p_store: storeId });
+    setBrandColorState(!colorErr && colorData ? normalizeHex(String(colorData)) : null);
   }, []);
 
   /** Antes da migração: deriva papel de profiles.roles e liga os módulos padrão. */
