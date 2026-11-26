@@ -1,11 +1,16 @@
 -- 020: edição transacional dos itens de uma venda, com ajuste de estoque pela diferença
+-- Revisão (Arquitetura, desenho-c1-a1-c2.md):
+--   R1: encomenda (by_order = true) não baixa nem devolve estoque; fica fora de oldq e newq.
+--   R2: serviço (category 'Serviços' ou service_type 'INTERNAL') não baixa estoque, como no addSale.
+--   R3: movimento 'SALE' quando a quantidade sobe; 'RETURN' quando desce (tipos de types.ts).
+--   R4: total e desconto vêm por parâmetro e são gravados em sales na mesma transação.
 -- Tudo numa única transação (a função inteira é atômica): valida, bloqueia as linhas, ajusta
--- o estoque pela diferença por produto, grava o movimento e troca os itens.
--- Não altera o total da venda: o total continua sendo gravado pelo app (updateSale), como hoje.
--- Itens com variante não ajustam estoque aqui: a função recusa e pede ajuste manual.
--- Movimento: 'saida' quando a venda ganha quantidade; 'entrada' quando perde (padrão já usado em stock_movements).
+-- o estoque pela diferença por produto, grava o movimento, troca os itens e atualiza a venda.
+-- Itens com variante são recusados (ajuste manual).
 
-CREATE OR REPLACE FUNCTION public.edit_sale_items(p_sale uuid, p_items jsonb)
+DROP FUNCTION IF EXISTS public.edit_sale_items(uuid, jsonb);
+
+CREATE OR REPLACE FUNCTION public.edit_sale_items(p_sale uuid, p_items jsonb, p_total numeric, p_discount numeric)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -41,6 +46,10 @@ BEGIN
     RAISE EXCEPTION 'Informe ao menos um item.';
   END IF;
 
+  IF p_total IS NULL OR p_total < 0 OR COALESCE(p_discount, 0) < 0 THEN
+    RAISE EXCEPTION 'Total e desconto inválidos.';
+  END IF;
+
   IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_items) e WHERE COALESCE((e->>'quantity')::int, 0) <= 0) THEN
     RAISE EXCEPTION 'A quantidade de cada item deve ser maior que zero.';
   END IF;
@@ -57,18 +66,25 @@ BEGIN
     RAISE EXCEPTION 'Produto não pertence a esta loja.';
   END IF;
 
-  -- Diferença por produto: quantidade nova menos a quantidade já registrada na venda.
+  -- Diferença por produto (só itens que baixam estoque): quantidade nova menos a já registrada.
   FOR rec IN
     WITH oldq AS (
       SELECT si.product_id AS pid, sum(si.quantity)::int AS q
       FROM public.sale_items si
-      WHERE si.sale_id = p_sale AND si.product_id IS NOT NULL
+      WHERE si.sale_id = p_sale
+        AND si.product_id IS NOT NULL
+        AND COALESCE(si.by_order, false) = false
+        AND si.category IS DISTINCT FROM 'Serviços'
+        AND COALESCE(si.service_type, '') <> 'INTERNAL'
       GROUP BY si.product_id
     ),
     newq AS (
       SELECT (e->>'product_id')::uuid AS pid, sum((e->>'quantity')::int)::int AS q
       FROM jsonb_array_elements(p_items) e
       WHERE e->>'product_id' IS NOT NULL
+        AND COALESCE((e->>'by_order')::boolean, false) = false
+        AND COALESCE(e->>'category', '') IS DISTINCT FROM 'Serviços'
+        AND COALESCE(e->>'service_type', '') <> 'INTERNAL'
       GROUP BY 1
     ),
     d AS (
@@ -79,9 +95,11 @@ BEGIN
   LOOP
     SELECT p.quantity, p.name INTO v_stock, v_name FROM public.products p WHERE p.id = rec.pid FOR UPDATE;
 
-    -- delta > 0: a venda ganhou quantidade, então sai mais do estoque.
-    IF v_stock - rec.delta < 0 THEN
-      RAISE EXCEPTION 'Estoque insuficiente para %: disponível %, necessário %.', v_name, v_stock, rec.delta;
+    -- delta > 0: a venda ganhou quantidade, então sai mais do estoque (movimento SALE).
+    -- delta < 0: a venda perdeu quantidade, então volta ao estoque (movimento RETURN).
+    IF rec.delta > 0 AND v_stock - rec.delta < 0 THEN
+      RAISE EXCEPTION 'Estoque insuficiente para %: disponível %, necessário %.', v_name, v_stock, rec.delta
+        USING ERRCODE = 'P0001';
     END IF;
 
     UPDATE public.products SET quantity = quantity - rec.delta WHERE id = rec.pid;
@@ -89,7 +107,7 @@ BEGIN
     INSERT INTO public.stock_movements (product_id, product_name, quantity, type, date, observations, user_id, store_id)
     VALUES (
       rec.pid, v_name, abs(rec.delta),
-      CASE WHEN rec.delta > 0 THEN 'saida' ELSE 'entrada' END,
+      CASE WHEN rec.delta > 0 THEN 'SALE' ELSE 'RETURN' END,
       now(), 'Edição da venda ' || p_sale::text, v_uid, v_store
     );
     v_adj := v_adj + 1;
@@ -113,9 +131,19 @@ BEGIN
   FROM jsonb_array_elements(p_items) e;
   GET DIAGNOSTICS v_count = ROW_COUNT;
 
+  UPDATE public.sales SET total = p_total, discount = COALESCE(p_discount, 0) WHERE id = p_sale;
+
+  -- AD-01: quando quem edita é administrador da plataforma, a edição fica registrada no log do admin
+  -- (mesma transação: sem log, sem edição).
+  IF public.is_platform_admin() THEN
+    PERFORM public.admin_log_audit(v_store, 'edit_sale',
+      jsonb_build_object('sale_id', p_sale, 'itens', v_count, 'produtos_ajustados', v_adj,
+                         'total', p_total, 'discount', COALESCE(p_discount, 0)));
+  END IF;
+
   RETURN jsonb_build_object('itens', v_count, 'produtos_ajustados', v_adj);
 END
 $f$;
 
-REVOKE ALL ON FUNCTION public.edit_sale_items(uuid, jsonb) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.edit_sale_items(uuid, jsonb) TO authenticated;
+REVOKE ALL ON FUNCTION public.edit_sale_items(uuid, jsonb, numeric, numeric) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.edit_sale_items(uuid, jsonb, numeric, numeric) TO authenticated;

@@ -21,7 +21,8 @@ A tabela de histórico do Supabase (`supabase_migrations.schema_migrations`) nã
 | 015 | aplicada (reaplicada em UTF-8) | Proteção básica do teste grátis |
 | 016 | aplicada (reaplicada em UTF-8) | Purga ao fim do teste |
 | 017 | aplicada | Revoga EXECUTE de anon nas funções definer |
-| 018 | NÃO aplicada | Painel admin. Ajustada para usar o log da 009 (`admin_audit_logs` e `admin_log_audit`). Testada em ROLLBACK (plano, pagamento e conversão gravam no log; dono bloqueado). Aguarda aprovação |
-| 019 | aplicada | Políticas de escrita do bucket `products` por loja |
-| 020 | NÃO aplicada | Edição transacional de venda. Aguarda aprovação do SecOps |
+| 018 | aplicada (verificada em 26/11: `admin_set_plan` existe no banco) | Painel admin. Usa o log da 009 (`admin_audit_logs` e `admin_log_audit`). Testada em ROLLBACK antes de aplicar |
+| 019 | aplicada (verificada em 26/11: políticas `products_insert_loja`, `products_update_loja`, `products_delete_loja` existem) | Políticas de escrita do bucket `products` por loja |
+| 020 | aplicada (26/11/2026, após teste em ROLLBACK 12/12 e liberação do SecOps; verificada: `edit_sale_items(uuid, jsonb, numeric, numeric)`, SECURITY DEFINER, EXECUTE só para `authenticated`) | Edição transacional de venda: ajuste de estoque pela diferença (SALE/RETURN), encomenda e serviço fora do ajuste, total e desconto na mesma transação, auditoria AD-01 para admin da plataforma. Saída em `Shared/gestao-pro-revisao/sql/rollback-020-resultado.md` |
 | 021 | aplicada | Auditoria obrigatória das ações do admin (status, extensão, criação de loja) na mesma transação; log com retenção de 5 anos (gatilhos de DELETE e TRUNCATE); `admin_log_audit` sem acesso para anon. Testada em ROLLBACK |
+| 022 | aplicada (26/11/2026, após teste em ROLLBACK 4/4 e revisão do SecOps; verificada: `admin_create_client` e `admin_set_status` com padrão de 1 h, `start_self_trial` inalterada, EXECUTE só para `authenticated`) | Teste grátis de 1 hora como padrão do Admin (`admin_create_client` e `admin_set_status`). Corpos gerados da definição de produção; diff em `Shared/gestao-pro-revisao/sql/022-diff.md`. Saída do teste em `Shared/gestao-pro-revisao/sql/rollback-022-resultado.md` |
