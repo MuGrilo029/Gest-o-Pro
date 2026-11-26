@@ -42,7 +42,11 @@ const STATUS_CLASS: Record<SubscriptionStatus, string> = {
 };
 const PLAN_LABEL: Record<string, string> = { inicio: 'Início', crescimento: 'Crescimento', avancado: 'Avançado', trial: 'Teste' };
 
-const endOf = (c: ClientRow): Date | null => (c.effectiveStatus === 'trial' ? c.trialEndsAt : c.validUntil);
+// Fim do teste: trial_ends_at para lojas em teste ou com teste vencido (plano 'trial'); senão valid_until.
+const endOf = (c: ClientRow): Date | null => {
+  const isTrialLike = c.effectiveStatus === 'trial' || c.status === 'trial' || c.plan === 'trial';
+  return isTrialLike ? (c.trialEndsAt ?? c.validUntil) : (c.validUntil ?? c.trialEndsAt);
+};
 
 const remainingText = (c: ClientRow, now: number): string => {
   const end = endOf(c);
