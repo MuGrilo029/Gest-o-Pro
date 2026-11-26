@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { Product, Customer, FurnitureSpecs, CardFee } from '../types';
 import { formatBrazilDateTime, formatISO, formatDisplayDate, getUUID, formatCurrency } from '../lib/utils';
+import { docProblem, findDocOwner } from '../lib/documents';
 
 interface CartItem extends Product {
   cartQty: number;
@@ -549,6 +550,10 @@ export const Sales: React.FC = () => {
 
   const handleSaveNewCustomer = () => {
     if (!newCustomerForm.name) return alertDialog('Nome é obrigatório');
+    const docProblemFound = docProblem(newCustomerForm.doc);
+    if (docProblemFound) return alertDialog(docProblemFound);
+    const docOwner = findDocOwner(newCustomerForm.doc, customers || []);
+    if (docOwner) return alertDialog(`Este CPF/CNPJ já está cadastrado para ${docOwner.name}.`);
 
     const newCustomer: Customer = {
       id: getUUID(),

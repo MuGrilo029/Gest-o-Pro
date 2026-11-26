@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useAppStore } from '../store';
 import { Product, Customer, Quote, QuoteItem, FurnitureSpecs, Sale, QuoteStatus, PendingSale } from '../types';
 import { formatBrazilDateTime, formatCurrency, formatDisplayDate, getUUID } from '../lib/utils';
+import { docProblem, findDocOwner } from '../lib/documents';
 import { Card, Button, Input, Select, Badge, formatCpfCnpj, formatPhone, Modal, confirmDialog, alertDialog } from '../components/UI';
 import { Search, ShoppingCart, Trash, Plus, Minus, ArrowRight, ArrowLeft, Printer, FileText, Check, DollarSign, UserCheck, Calendar, Clock, History, Edit, CheckCircle, Trash2, Info, Upload, Image as ImageIcon, Loader2, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -378,6 +379,10 @@ export const Quotes: React.FC = () => {
 
     const handleSaveNewCustomer = () => {
         if (!newCustomerForm.name) return alertDialog('Nome é obrigatório');
+        const docProblemFound = docProblem(newCustomerForm.doc);
+        if (docProblemFound) return alertDialog(docProblemFound);
+        const docOwner = findDocOwner(newCustomerForm.doc, customers || []);
+        if (docOwner) return alertDialog(`Este CPF/CNPJ já está cadastrado para ${docOwner.name}.`);
 
         const newCustomer = {
             id: getUUID(),
