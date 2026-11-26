@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { useAppStore } from '../store';
-import { Product, Customer, Quote, QuoteItem, FurnitureSpecs, Sale } from '../types';
+import { Product, Customer, Quote, QuoteItem, FurnitureSpecs, Sale, QuoteStatus, PendingSale } from '../types';
 import { formatBrazilDateTime, formatCurrency, formatDisplayDate, getUUID } from '../lib/utils';
-import { Card, Button, Input, Select, formatCpfCnpj, formatPhone, Modal, confirmDialog, alertDialog } from '../components/UI';
+import { Card, Button, Input, Select, Badge, formatCpfCnpj, formatPhone, Modal, confirmDialog, alertDialog } from '../components/UI';
 import { Search, ShoppingCart, Trash, Plus, Minus, ArrowRight, ArrowLeft, Printer, FileText, Check, DollarSign, UserCheck, Calendar, Clock, History, Edit, CheckCircle, Trash2, Info, Upload, Image as ImageIcon, Loader2, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -20,6 +20,34 @@ interface CartItem extends Product {
 }
 
 type QuotesStep = 'POS' | 'CHECKOUT' | 'CONFIRM';
+
+const QUOTE_STATUS_OPTIONS: { value: QuoteStatus; label: string; color: 'gray' | 'blue' | 'green' | 'red' }[] = [
+    { value: 'rascunho', label: 'Rascunho', color: 'gray' },
+    { value: 'enviado', label: 'Enviado', color: 'blue' },
+    { value: 'aprovado', label: 'Aprovado', color: 'green' },
+    { value: 'recusado', label: 'Recusado', color: 'red' },
+];
+const getQuoteStatusOption = (s?: QuoteStatus) => QUOTE_STATUS_OPTIONS.find(o => o.value === (s || 'rascunho')) || QUOTE_STATUS_OPTIONS[0];
+
+// "Expirado" não é gravado: é calculado pela validade (data da cotação + dias de validade).
+// Só vale para orçamento ainda enviado, sem decisão do cliente.
+const DAY_MS = 86400000;
+const getValidUntil = (q: Quote) => new Date(new Date(q.date).getTime() + q.validityDays * DAY_MS);
+const getDaysLeft = (q: Quote) => Math.ceil((getValidUntil(q).getTime() - Date.now()) / DAY_MS);
+const isExpired = (q: Quote) => q.status === 'enviado' && getDaysLeft(q) < 0;
+const getDisplayStatusKey = (q: Quote): 'expirado' | QuoteStatus => (isExpired(q) ? 'expirado' : (q.status || 'rascunho'));
+const getDisplayStatus = (q: Quote): { label: string; color: 'gray' | 'blue' | 'green' | 'red' | 'yellow' } =>
+    isExpired(q) ? { label: 'Expirado', color: 'gray' } : getQuoteStatusOption(q.status);
+
+type StatusFilter = 'TODOS' | 'expirado' | QuoteStatus;
+const STATUS_FILTER_TABS: { value: StatusFilter; label: string }[] = [
+    { value: 'TODOS', label: 'Todos' },
+    { value: 'rascunho', label: 'Rascunho' },
+    { value: 'enviado', label: 'Enviado' },
+    { value: 'aprovado', label: 'Aprovado' },
+    { value: 'recusado', label: 'Recusado' },
+    { value: 'expirado', label: 'Expirado' },
+];
 
 export const Quotes: React.FC = () => {
     const { products, companySettings, addNotification, addQuote, updateQuote, quotes, deleteQuote, addSale, navigateTo, customers, addCustomer, categories: allCategories, setPendingSale } = useAppStore();
@@ -41,12 +69,14 @@ export const Quotes: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [onlyInStock, setOnlyInStock] = useState(false);
     const [historySearch, setHistorySearch] = useState('');
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>('TODOS');
 
     // Quote Data
     const [cart, setCart] = useState<CartItem[]>([]);
     const [clientName, setClientName] = useState('');
     const [clientPhone, setClientPhone] = useState('');
     const [validityDays, setValidityDays] = useState(15);
+    const [quoteStatus, setQuoteStatus] = useState<QuoteStatus>('rascunho');
     const [observations, setObservations] = useState('');
 
     // Payment Data (Replicated from Sales logic)
@@ -146,10 +176,11 @@ export const Quotes: React.FC = () => {
     // Filtered History
     const filteredQuotes = useMemo(() => {
         return quotes.filter(q =>
-            q.clientName.toLowerCase().includes(historySearch.toLowerCase()) ||
-            q.quoteNumber.toLowerCase().includes(historySearch.toLowerCase())
+            (statusFilter === 'TODOS' || getDisplayStatusKey(q) === statusFilter) &&
+            (q.clientName.toLowerCase().includes(historySearch.toLowerCase()) ||
+            q.quoteNumber.toLowerCase().includes(historySearch.toLowerCase()))
         ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [quotes, historySearch]);
+    }, [quotes, historySearch, statusFilter]);
 
     // Filtered Customers for Search
     const filteredCustomers = useMemo(() => {
@@ -162,7 +193,9 @@ export const Quotes: React.FC = () => {
 
     // Financials
     const subtotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-    const total = Math.max(0, subtotal - discount);
+    // Desconto sempre entre 0 e o subtotal (valor negativo aumentaria o total)
+    const effectiveDiscount = Math.min(Math.max(0, Number(discount) || 0), subtotal);
+    const total = Math.max(0, subtotal - effectiveDiscount);
     const remainingAmount = Math.max(0, total - downPayment);
 
     // --- ACTIONS ---
@@ -174,6 +207,7 @@ export const Quotes: React.FC = () => {
         setClientPhone('');
         setDiscount(0);
         setValidityDays(15);
+        setQuoteStatus('rascunho');
         setObservations('');
         setPaymentMethod('Dinheiro');
         setPaymentType('FULL');
@@ -189,6 +223,7 @@ export const Quotes: React.FC = () => {
         setClientPhone(q.clientPhone || '');
         setDiscount(q.discount);
         setValidityDays(q.validityDays);
+        setQuoteStatus(q.status || 'rascunho');
         setObservations(q.observations || '');
         setPaymentMethod(q.paymentMethod || 'Dinheiro');
         setPaymentType(q.paymentType || 'FULL');
@@ -228,6 +263,7 @@ export const Quotes: React.FC = () => {
         setClientPhone(q.clientPhone || '');
         setDiscount(q.discount);
         setValidityDays(q.validityDays);
+        setQuoteStatus(q.status || 'rascunho');
         setObservations(q.observations || '');
         setPaymentMethod(q.paymentMethod || 'Dinheiro');
         setPaymentType(q.paymentType || 'FULL');
@@ -330,7 +366,7 @@ export const Quotes: React.FC = () => {
     };
 
     const updatePrice = (cartId: string, newPrice: number) => {
-        setCart(prev => prev.map(item => item.cartId === cartId ? { ...item, price: newPrice } : item));
+        setCart(prev => prev.map(item => item.cartId === cartId ? { ...item, price: Math.max(0, Number(newPrice) || 0) } : item));
     };
 
     const selectCustomer = (c: any) => {
@@ -368,14 +404,17 @@ export const Quotes: React.FC = () => {
             return;
         }
 
+        const existingQuote = editingId ? quotes.find(q => q.id === editingId) : undefined;
         const quoteData: Quote = {
             id: editingId || getUUID(),
             quoteNumber: editingId
-                ? quotes.find(q => q.id === editingId)?.quoteNumber || `#${Date.now().toString().slice(-6)} `
-                : `#${Date.now().toString().slice(-6)} `,
+                ? existingQuote?.quoteNumber || `#${Date.now().toString().slice(-6)}`
+                : `#${Date.now().toString().slice(-6)}`,
+            status: quoteStatus,
+            convertedSaleId: existingQuote?.convertedSaleId, // mantém o vínculo com a venda ao editar
             clientName,
             clientPhone,
-            discount,
+            discount: effectiveDiscount,
             validityDays,
             observations,
             paymentMethod,
@@ -385,7 +424,7 @@ export const Quotes: React.FC = () => {
             remainingStatus: paymentType === 'PARTIAL' ? (isRemainingPaidNow ? 'PAID' : 'PENDING') : undefined,
             subtotal,
             total,
-            date: formatBrazilDateTime(),
+            date: existingQuote?.date || formatBrazilDateTime(), // validade conta da criação, não da última edição
             items: cart.map(item => ({
                 id: getUUID(),
                 quoteId: editingId || '',
@@ -413,8 +452,17 @@ export const Quotes: React.FC = () => {
     };
 
     const handleConvertToSale = async (q: Quote) => {
+        if (q.status !== 'aprovado') {
+            addNotification('Só é possível converter orçamento aprovado.', 'error');
+            return;
+        }
+        if (q.convertedSaleId) {
+            addNotification('Este orçamento já foi convertido em venda.', 'info');
+            return;
+        }
         if (await confirmDialog(`Converter orçamento ${q.quoteNumber} em Venda ?\nVocê será redirecionado para o PDV para conferir e finalizar.`)) {
-            const saleData: Partial<Sale> = {
+            const saleData: PendingSale = {
+                quoteId: q.id, // o PDV grava converted_sale_id ao salvar a venda
                 customerName: q.clientName,
                 customerPhone: q.clientPhone,
                 deliveryType: 'PICKUP', // Default, user can change in POS
@@ -445,6 +493,25 @@ export const Quotes: React.FC = () => {
                 navigateTo('SALES');
             }, 500);
         }
+    };
+
+    const handleSetStatus = (q: Quote, status: QuoteStatus) => {
+        updateQuote({ ...q, status });
+    };
+
+    // Duplicar: nova cotação em rascunho, com data e validade a partir de hoje, sem vínculo com venda
+    const handleDuplicate = (q: Quote) => {
+        const newId = getUUID();
+        addQuote({
+            ...q,
+            id: newId,
+            quoteNumber: `#${Date.now().toString().slice(-6)}`,
+            status: 'rascunho',
+            convertedSaleId: undefined,
+            date: formatBrazilDateTime(),
+            items: q.items.map(i => ({ ...i, id: getUUID(), quoteId: newId })),
+        });
+        addNotification('Orçamento duplicado como rascunho', 'success');
     };
 
     // --- RENDERERS ---
@@ -633,7 +700,7 @@ export const Quotes: React.FC = () => {
                 <div className="p-4 border-t dark:border-slate-700 bg-gray-50 dark:bg-slate-800 space-y-4">
                     <div className="flex justify-between font-bold text-xl text-gray-800 dark:text-white">
                         <span>Total</span>
-                        <span>R$ {subtotal.toFixed(2)}</span>
+                        <span>R$ {total.toFixed(2)}</span>
                     </div>
                     <Button
                         className="w-full h-12 text-lg font-bold shadow-lg shadow-wine-200 dark:shadow-none"
@@ -712,8 +779,11 @@ export const Quotes: React.FC = () => {
                                     label="Validade (Dias)"
                                     type="number"
                                     value={validityDays}
-                                    onChange={e => setValidityDays(Number(e.target.value))}
+                                    onChange={e => setValidityDays(Math.max(1, Number(e.target.value) || 0))}
                                 />
+                                <Select label="Status" value={quoteStatus} onChange={e => setQuoteStatus(e.target.value as QuoteStatus)}>
+                                    {QUOTE_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                </Select>
                             </div>
                         </div>
                     </Card>
@@ -747,7 +817,7 @@ export const Quotes: React.FC = () => {
                                             label="Valor Entrada (R$)"
                                             type="number"
                                             value={downPayment}
-                                            onChange={e => setDownPayment(Number(e.target.value))}
+                                            onChange={e => setDownPayment(Math.min(Math.max(0, Number(e.target.value) || 0), total))}
                                         />
                                     </div>
                                     <div className="col-span-2 md:col-span-1">
@@ -762,7 +832,7 @@ export const Quotes: React.FC = () => {
                                     <div className="col-span-2 p-3 bg-white dark:bg-slate-800 rounded border border-gray-200 dark:border-slate-600">
                                         <div className="flex justify-between items-center mb-2">
                                             <span className="text-xs font-bold uppercase text-gray-500">Restante a Pagar</span>
-                                            <span className="font-bold text-lg">R$ {(total - downPayment).toFixed(2)}</span>
+                                            <span className="font-bold text-lg">R$ {remainingAmount.toFixed(2)}</span>
                                         </div>
                                         <div className="flex gap-4">
                                             <label className="flex items-center gap-2 cursor-pointer">
@@ -787,12 +857,21 @@ export const Quotes: React.FC = () => {
                             )}
 
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="md:col-span-1">
+                                <div className="md:col-span-1 grid grid-cols-2 gap-2">
                                     <Input
                                         label="Desconto (R$)"
                                         type="number"
                                         value={discount}
-                                        onChange={e => setDiscount(Number(e.target.value))}
+                                        onChange={e => setDiscount(Math.min(Number(e.target.value) || 0, subtotal))}
+                                    />
+                                    <Input
+                                        label="Desconto (%)"
+                                        type="number"
+                                        value={subtotal > 0 ? Number(((discount / subtotal) * 100).toFixed(2)) : 0}
+                                        onChange={e => {
+                                            const pct = Math.min(Math.max(Number(e.target.value) || 0, 0), 100);
+                                            setDiscount(Number((subtotal * pct / 100).toFixed(2)));
+                                        }}
                                     />
                                 </div>
                                 <div className="md:col-span-2">
@@ -834,10 +913,10 @@ export const Quotes: React.FC = () => {
                                     <span>Subtotal</span>
                                     <span>R$ {subtotal.toFixed(2)}</span>
                                 </div>
-                                {discount > 0 && (
+                                {effectiveDiscount > 0 && (
                                     <div className="flex justify-between text-red-500">
                                         <span>Desconto</span>
-                                        <span>- R$ {discount.toFixed(2)}</span>
+                                        <span>- R$ {effectiveDiscount.toFixed(2)}</span>
                                     </div>
                                 )}
                                 <div className="flex justify-between text-2xl font-black text-wine-800 dark:text-white pt-2 border-t">
@@ -899,6 +978,29 @@ export const Quotes: React.FC = () => {
                 </Button>
             </div>
 
+            {/* Filtro por status */}
+            <div className="flex flex-wrap gap-2 mb-4" role="tablist" aria-label="Filtrar por status">
+                {STATUS_FILTER_TABS.map(tab => (
+                    <button
+                        key={tab.value}
+                        role="tab"
+                        aria-selected={statusFilter === tab.value}
+                        onClick={() => setStatusFilter(tab.value)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${statusFilter === tab.value ? 'bg-wine-700 text-white border-wine-700' : 'bg-white text-gray-600 border-gray-200 hover:border-wine-300 dark:bg-slate-800 dark:text-gray-300 dark:border-slate-700'}`}
+                    >
+                        {tab.label} <span className="opacity-70">({quotes.filter(q => tab.value === 'TODOS' || getDisplayStatusKey(q) === tab.value).length})</span>
+                    </button>
+                ))}
+            </div>
+
+            {/* Estado vazio */}
+            {filteredQuotes.length === 0 && (
+                <div className="flex-1 flex flex-col items-center justify-center text-center gap-3 text-gray-500">
+                    <p className="font-semibold">{quotes.length === 0 ? 'Nenhum orçamento ainda' : 'Nenhum orçamento neste filtro'}</p>
+                    {quotes.length === 0 && <Button onClick={handleNewQuote} className="gap-2"><Plus size={18} /> Novo orçamento</Button>}
+                </div>
+            )}
+
             {/* List */}
             <div className="flex-1 overflow-y-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20 custom-scrollbar">
                 {filteredQuotes.map(quote => (
@@ -917,6 +1019,18 @@ export const Quotes: React.FC = () => {
                             </div>
                         </div>
 
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                            <Badge color={getDisplayStatus(quote).color}>{getDisplayStatus(quote).label}</Badge>
+                            {quote.convertedSaleId
+                                ? <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">Venda #{quote.convertedSaleId.slice(0, 6)}</span>
+                                : <span className="text-xs text-gray-500">Válido até {getValidUntil(quote).toLocaleDateString('pt-BR')}</span>}
+                        </div>
+                        {!quote.convertedSaleId && quote.status === 'enviado' && !isExpired(quote) && getDaysLeft(quote) <= 2 && (
+                            <div className="mb-3">
+                                <Badge color="yellow">{getDaysLeft(quote) <= 0 ? 'Vence hoje' : `Vence em ${getDaysLeft(quote)} ${getDaysLeft(quote) === 1 ? 'dia' : 'dias'}`}</Badge>
+                            </div>
+                        )}
+
                         <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-3 text-sm text-gray-600 dark:text-gray-300 flex-1 mb-4 space-y-1">
                             {quote.items.slice(0, 3).map((i, idx) => (
                                 <div key={idx} className="flex justify-between border-b border-gray-100 dark:border-slate-700 pb-1 last:border-0 last:pb-0">
@@ -928,16 +1042,38 @@ export const Quotes: React.FC = () => {
                         </div>
 
                         <div className="grid grid-cols-2 gap-2 opacity-80 group-hover:opacity-100 transition-opacity">
+                            {/* Ações por status (spec: Rascunho → Enviado → Aprovado | Recusado; Expirado/Recusado → Duplicar) */}
+                            {(!quote.status || quote.status === 'rascunho') && !quote.convertedSaleId && (
+                                <Button size="sm" onClick={() => handleSetStatus(quote, 'enviado')} className="gap-2 col-span-2">Marcar enviado</Button>
+                            )}
+                            {quote.status === 'enviado' && !isExpired(quote) && (
+                                <>
+                                    <Button size="sm" onClick={() => handleSetStatus(quote, 'aprovado')} className="gap-2 bg-emerald-600 hover:bg-emerald-700 border-none text-white">Aprovar</Button>
+                                    <Button size="sm" variant="ghost" onClick={() => handleSetStatus(quote, 'recusado')} className="text-red-500 hover:bg-red-50">Recusar</Button>
+                                </>
+                            )}
+                            {quote.status === 'aprovado' && (
+                                <Button
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={() => handleConvertToSale(quote)}
+                                    disabled={!!quote.convertedSaleId}
+                                    title={quote.convertedSaleId ? 'Já convertido' : 'Converter em venda'}
+                                    className="gap-2 col-span-2 bg-emerald-600 hover:bg-emerald-700 border-none text-white disabled:opacity-40"
+                                >
+                                    <DollarSign size={14} /> Converter em venda
+                                </Button>
+                            )}
+                            {(isExpired(quote) || quote.status === 'recusado') && (
+                                <Button size="sm" variant="outline" onClick={() => handleDuplicate(quote)} className="gap-2 col-span-2">Duplicar</Button>
+                            )}
                             <Button variant="outline" size="sm" onClick={() => handleLoadQuote(quote)} className="gap-2">
                                 <Edit size={14} /> Editar
                             </Button>
                             <Button variant="outline" size="sm" onClick={() => handleQuickPrint(quote)} className="gap-2 border-slate-300">
-                                <Printer size={14} /> Imprimir
+                                <Printer size={14} /> Imprimir / PDF
                             </Button>
-                            <Button variant="primary" size="sm" onClick={() => handleConvertToSale(quote)} className="gap-2 bg-emerald-600 hover:bg-emerald-700 border-none text-white">
-                                <DollarSign size={14} /> Vender
-                            </Button>
-                            <Button variant="ghost" size="sm" onClick={() => deleteQuote(quote.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50">
+                            <Button variant="ghost" size="sm" onClick={() => deleteQuote(quote.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 col-span-2">
                                 <Trash2 size={14} /> Excluir
                             </Button>
                         </div>
@@ -1026,7 +1162,7 @@ export const Quotes: React.FC = () => {
                     <div className="text-right">
                         <span className="quote-tag mb-2 inline-block">Proposta Comercial</span>
                         <p className="text-xl font-black text-slate-800 tracking-tighter">
-                            {editingId ? quotes.find(q => q.id === editingId)?.quoteNumber : `#${Date.now().toString().slice(-6)} `}
+                            {editingId ? quotes.find(q => q.id === editingId)?.quoteNumber : `#${Date.now().toString().slice(-6)}`}
                         </p>
                         <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase">Emissão: {new Date().toLocaleDateString()}</p>
                     </div>
@@ -1102,10 +1238,10 @@ export const Quotes: React.FC = () => {
                         <span className="text-slate-400 font-bold uppercase text-[10px] tracking-widest">Subtotal Bruto</span>
                         <span className="font-bold">R$ {subtotal.toFixed(2)}</span>
                     </div>
-                    {discount > 0 && (
+                    {effectiveDiscount > 0 && (
                         <div className="total-line text-emerald-600">
                             <span className="font-bold uppercase text-[10px] tracking-widest">Desconto</span>
-                            <span className="font-bold">- R$ {discount.toFixed(2)}</span>
+                            <span className="font-bold">- R$ {effectiveDiscount.toFixed(2)}</span>
                         </div>
                     )}
                     <div className="total-final">

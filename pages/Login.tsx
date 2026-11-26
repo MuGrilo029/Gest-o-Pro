@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Lock, Mail, Loader2, AlertCircle } from 'lucide-react';
+import { SelfSignup, PENDING_TRIAL_KEY } from './SelfSignup';
 
 /**
  * Tela de acesso.
@@ -12,6 +13,10 @@ export const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Abre direto no cadastro quando o link vier com #cadastro (CTAs da página de vendas)
+  const [mode, setMode] = useState<'login' | 'signup'>(() =>
+    typeof window !== 'undefined' && window.location.hash === '#cadastro' ? 'signup' : 'login'
+  );
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,12 +32,32 @@ export const Login: React.FC = () => {
             : error.message
         );
       }
+
+      // Cadastro que aguardava confirmação de e-mail: o teste de 1 hora começa agora
+      const pendingStore = localStorage.getItem(PENDING_TRIAL_KEY);
+      if (pendingStore) {
+        const { error: rpcError } = await supabase.rpc('start_self_trial', { p_name: pendingStore });
+        if (rpcError) throw new Error(rpcError.message);
+        localStorage.removeItem(PENDING_TRIAL_KEY);
+        window.location.reload();
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
   };
+
+  if (mode === 'signup') {
+    return (
+      <SelfSignup
+        onBack={() => {
+          window.location.hash = '';
+          setMode('login');
+        }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 px-4 py-8">
@@ -101,6 +126,14 @@ export const Login: React.FC = () => {
             {loading ? <Loader2 size={18} className="animate-spin" /> : 'Entrar no sistema'}
           </button>
         </form>
+
+        <button
+          type="button"
+          onClick={() => setMode('signup')}
+          className="mt-6 w-full text-center text-sm text-zinc-700 dark:text-zinc-200 hover:underline"
+        >
+          Ainda não tem conta? Criar conta e testar grátis por 1 hora
+        </button>
 
         <p className="mt-6 text-center text-xs text-zinc-500 dark:text-zinc-400">
           Acesso restrito a usuários autorizados. Fale com o responsável da sua loja.

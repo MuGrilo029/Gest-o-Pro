@@ -15,7 +15,9 @@ export const StockEntries: React.FC = () => {
     return (stockMovements || [])
       .filter(m => m.type === 'PURCHASE')
       .filter(m => {
-        const date = new Date(m.date).toISOString().slice(0, 10);
+        // Data inválida não pode derrubar a tela: vira vazia e só some nos filtros de período
+        const parsed = new Date(m.date);
+        const date = isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0, 10);
         const matchesTerm = !term || `${m.productName} ${m.variantName || ''} ${m.observations || ''}`.toLowerCase().includes(term);
         return matchesTerm && (!startDate || date >= startDate) && (!endDate || date <= endDate);
       })

@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { Transaction, TransactionStatus, Product, ProductVariant, Supplier, Sale, SaleItem, Delivery, User, Customer, AppView, CompanySettings, Category, CategoryGroup, ProductionOrder, FurnitureSpecs, Notification, Quote, Order, StockMovement, CardFee } from './types';
+import { Transaction, TransactionStatus, Product, ProductVariant, Supplier, Sale, SaleItem, Delivery, User, Customer, AppView, CompanySettings, Category, CategoryGroup, ProductionOrder, FurnitureSpecs, Notification, Quote, Order, StockMovement, CardFee, PendingSale } from './types';
 import { supabase } from './lib/supabase';
 import { parseISO, formatISO, formatBrazilDateTime, isSameMonth, getUUID } from './lib/utils';
 import { useStore } from './contexts/StoreContext';
@@ -82,6 +82,7 @@ interface AppState {
   addQuote: (q: Quote) => void;
   updateQuote: (q: Quote) => void;
   deleteQuote: (id: string) => void;
+  linkQuoteToSale: (quoteId: string, saleId: string) => Promise<void>;
 
   addStockMovement: (m: StockMovement) => void;
   registerStockEntry: (productId: string, quantity: number, cost: number, date: string, observations?: string, variantId?: string) => Promise<void>;
@@ -107,8 +108,8 @@ interface AppState {
   deleteSimulationGroup: (groupId: string) => Promise<void>;
   clearSimulations: () => Promise<void>;
   // Pending Sale (from Quote Conversion)
-  pendingSale: Partial<Sale> | null;
-  setPendingSale: (sale: Partial<Sale> | null) => void;
+  pendingSale: PendingSale | null;
+  setPendingSale: (sale: PendingSale | null) => void;
   isInitialized: boolean;
   refreshData: (silent?: boolean) => Promise<void>;
 }
@@ -372,7 +373,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }));
 
       const formattedProd = (prodData || []).map((p: any) => ({
-        id: p.id, saleId: p.sale_id, customerName: p.customer_name, customerPhone: p.customer_phone, customerAddress: p.customer_address, itemName: p.item_name, specs: p.specs, quantity: p.quantity, date: p.date, status: p.status
+        id: p.id, saleId: p.sale_id, customerName: p.customer_name, customerPhone: p.customer_phone, customerAddress: p.customer_address, itemName: p.item_name, specs: p.specs, quantity: p.quantity, date: p.date, status: p.status,
+        deadline: p.deadline || undefined, totalValue: Number(p.total_value) || 0, downPayment: Number(p.down_payment) || 0, attachments: Array.isArray(p.attachments) ? p.attachments : []
       }));
 
       const formattedDel = (delData || []).map((d: any) => ({
@@ -382,6 +384,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const formattedQuotes = (quotesData || []).map((q: any) => ({
         id: q.id,
         quoteNumber: q.quote_number,
+        status: q.status || 'rascunho',
+        convertedSaleId: q.converted_sale_id || undefined,
         clientName: q.client_name,
         clientPhone: q.client_phone,
         discount: Number(q.discount) || 0,
@@ -663,7 +667,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
-  const [pendingSale, setPendingSale] = useState<Partial<Sale> | null>(null);
+  const [pendingSale, setPendingSale] = useState<PendingSale | null>(null);
 
   const navigateTo = (view: AppView) => {
     setCurrentView(view);
@@ -1110,13 +1114,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // 2. PREPARE ITEMS & STOCK LOGIC
       // We process items first to determine their final state (byOrder or not)
       const processedItems = [];
+      // Estado de estoque da própria venda: duas linhas do mesmo produto não podem sobrescrever uma à outra
+      const stockWorking = new Map<string, Product>();
 
       for (const item of s.items) {
         // Clone item to avoid mutation issues
         const processingItem = { ...item };
 
         if (processingItem.category !== 'Serviços' && processingItem.serviceType !== 'INTERNAL') {
-          const product = data.products.find((p: Product) => p.id === processingItem.productId);
+          const product = stockWorking.get(processingItem.productId) ?? data.products.find((p: Product) => p.id === processingItem.productId);
 
           if (product) {
             // 2A. Auto-detect "Encomenda" if stock is 0 or less
@@ -1156,7 +1162,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 });
               }
 
-              await updateProduct({ ...product, quantity: newQty, variants: updatedVariants });
+              const updatedProduct: Product = { ...product, quantity: newQty, variants: updatedVariants };
+              stockWorking.set(processingItem.productId, updatedProduct);
+              await updateProduct(updatedProduct);
 
               addStockMovement({
                 id: getUUID(),
@@ -1490,21 +1498,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const { data: saleItems } = await supabase.from('sale_items').select('*').eq('sale_id', id);
 
       if (saleItems) {
+        const stockWorking = new Map<string, Product>();
         for (const item of saleItems) {
           // Restore stock ONLY if it was NOT made to order (i.e. taken from stock)
           if (!item.by_order && item.product_id) {
-            const product = data.products.find((p: Product) => p.id === item.product_id);
+            const product = stockWorking.get(item.product_id) ?? data.products.find((p: Product) => p.id === item.product_id);
             if (product) {
               const restoredVariants = item.variant_id && product.variants
                 ? product.variants.map(v => v.id === item.variant_id
                   ? { ...v, quantity: v.quantity + item.quantity }
                   : v)
                 : product.variants;
-              await updateProduct({
+              const restoredProduct: Product = {
                 ...product,
                 quantity: product.quantity + item.quantity,
                 variants: restoredVariants
-              });
+              };
+              stockWorking.set(item.product_id, restoredProduct);
+              await updateProduct(restoredProduct);
               // Log return
               addStockMovement({
                 id: getUUID(),
@@ -1721,7 +1732,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       specs: p.specs,
       quantity: p.quantity,
       date: p.date,
-      status: p.status
+      status: p.status,
+      // Só vão no insert quando preenchidos (produção padrão não envia)
+      ...(p.deadline ? { deadline: p.deadline } : {}),
+      ...(p.totalValue !== undefined ? { total_value: p.totalValue } : {}),
+      ...(p.downPayment !== undefined ? { down_payment: p.downPayment } : {}),
+      ...(p.attachments?.length ? { attachments: p.attachments } : {})
     });
   };
 
@@ -1988,6 +2004,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const { error } = await supabase.from('quotes').insert({
       id: q.id,
       quote_number: q.quoteNumber,
+      status: q.status || 'rascunho',
       client_name: q.clientName,
       client_phone: q.clientPhone,
       discount: q.discount,
@@ -2042,7 +2059,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateQuote = async (q: Quote) => {
     setData((prev: any) => ({ ...prev, quotes: prev.quotes.map((item: Quote) => item.id === q.id ? q : item) }));
 
+    // converted_sale_id só é gravado quando existe: salvar o orçamento não pode apagar o vínculo com a venda
     const { error } = await supabase.from('quotes').update({
+      ...(q.status ? { status: q.status } : {}),
+      ...(q.convertedSaleId ? { converted_sale_id: q.convertedSaleId } : {}),
       client_name: q.clientName,
       client_phone: q.clientPhone,
       discount: q.discount,
@@ -2087,6 +2107,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return true;
     }
     return false;
+  };
+
+  // Grava o vínculo orçamento → venda (chamado pelo PDV após salvar a venda convertida)
+  const linkQuoteToSale = async (quoteId: string, saleId: string) => {
+    setData((prev: any) => ({ ...prev, quotes: prev.quotes.map((q: Quote) => q.id === quoteId ? { ...q, convertedSaleId: saleId } : q) }));
+    const { error } = await supabase.from('quotes').update({ converted_sale_id: saleId }).eq('id', quoteId);
+    if (error) console.error('Error linking quote to sale:', error);
   };
 
   const deleteQuote = async (id: string) => {
@@ -2428,6 +2455,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addQuote,
       updateQuote,
       deleteQuote,
+      linkQuoteToSale,
       addStockMovement,
       registerStockEntry,
       importData,

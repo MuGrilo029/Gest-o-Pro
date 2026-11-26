@@ -7,6 +7,7 @@ import { ProductionOrder, FurnitureSpecs, Product } from '../types';
 import { Modal } from '../components/UI';
 import { ServiceConfigForm } from '../components/ServiceConfigForm';
 import { getUUID, formatBrazilDateTime, formatISO } from '../lib/utils';
+import { CustomProductionBoard, ProductionModeTabs, parseCustomSpecs } from '../components/CustomProductionBoard';
 
 // Helper to safely parse specs
 const parseSpecs = (specsStr: string): FurnitureSpecs | null => {
@@ -196,6 +197,8 @@ export const Production: React.FC = () => {
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustomerResults, setShowCustomerResults] = useState(false);
   const [isNewCustomer, setIsNewCustomer] = useState(false);
+  // 'STANDARD' = OS padrão (kanban atual); 'CUSTOM' = produção sob medida
+  const [mode, setMode] = useState<'STANDARD' | 'CUSTOM'>('STANDARD');
 
   // Date Filter State
   type TimeRange = 'TODAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'CUSTOM';
@@ -232,6 +235,9 @@ export const Production: React.FC = () => {
 
   // --- FILTRAGEM ---
   const filteredOrders = productionOrders.filter(o => {
+    // Pedidos sob medida têm o próprio quadro (aba "Sob medida")
+    if (parseCustomSpecs(o.specs)) return false;
+
     // Filtro de Texto
     const matchesSearch = o.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       o.itemName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -559,6 +565,11 @@ export const Production: React.FC = () => {
     );
   }
 
+  // --- CUSTOM (SOB MEDIDA) BOARD VIEW ---
+  if (mode === 'CUSTOM') {
+    return <CustomProductionBoard mode={mode} onModeChange={setMode} />;
+  }
+
   // --- DEFAULT BOARD VIEW ---
   return (
     <>
@@ -573,9 +584,12 @@ export const Production: React.FC = () => {
             </p>
           </div>
 
-          <Button onClick={() => setShowManualModal(true)} className="flex items-center gap-2">
-            <Plus size={18} /> Nova Produção
-          </Button>
+          <div className="flex items-center gap-3">
+            <ProductionModeTabs mode={mode} onChange={setMode} />
+            <Button onClick={() => setShowManualModal(true)} className="flex items-center gap-2">
+              <Plus size={18} /> Nova Produção
+            </Button>
+          </div>
 
           {/* BARRA DE FILTROS (MÊS E PESQUISA) */}
           <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">

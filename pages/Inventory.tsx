@@ -28,7 +28,7 @@ export const Inventory: React.FC = () => {
     const newVariant: ProductVariant = {
       id: getUUID(),
       name: newVariantName.trim(),
-      quantity: Number(newVariantQty) || 0,
+      quantity: Math.max(0, Number(newVariantQty) || 0),
       sku: newVariantSku.trim() || undefined
     };
     const updatedVariants = [...(formData.variants || []), newVariant];
@@ -125,12 +125,16 @@ export const Inventory: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name) return;
+    if (!formData.name?.trim()) {
+      alertDialog('Informe o nome do produto.');
+      return;
+    }
 
     const hasVars = !!formData.hasVariations && Array.isArray(formData.variants) && formData.variants.length > 0;
-    const computedQty = hasVars
+    // Quantidade nunca negativa (campo numérico aceita digitação livre)
+    const computedQty = Math.max(0, hasVars
       ? formData.variants!.reduce((acc, v) => acc + (v.quantity || 0), 0)
-      : (Number(formData.quantity) || 0);
+      : (Number(formData.quantity) || 0));
 
     const productData: Product = {
       id: formData.id || getUUID(),
@@ -145,7 +149,7 @@ export const Inventory: React.FC = () => {
       description: formData.description || '',
       observations: formData.observations || '',
       hasVariations: hasVars,
-      variants: hasVars ? formData.variants : []
+      variants: hasVars ? formData.variants!.map(v => ({ ...v, quantity: Math.max(0, Number(v.quantity) || 0) })) : []
     };
 
     if (formData.id) {

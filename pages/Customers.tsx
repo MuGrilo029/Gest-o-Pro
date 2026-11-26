@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
-import { Card, Button, Input, Table, Modal, EmptyState, PageHeader, formatCpfCnpj, formatPhone } from '../components/UI';
+import { Card, Button, Input, Table, Modal, EmptyState, PageHeader, formatCpfCnpj, formatPhone, alertDialog } from '../components/UI';
 import { Plus, Trash2, Search, Phone, MapPin, Mail, MessageCircle } from 'lucide-react';
 import { Customer } from '../types';
 import { getUUID } from '../lib/utils';
@@ -24,7 +24,10 @@ export const Customers: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name) return;
+    if (!formData.name?.trim()) {
+      alertDialog('Informe o nome do cliente.');
+      return;
+    }
 
     const customerData = {
       id: formData.id || getUUID(),

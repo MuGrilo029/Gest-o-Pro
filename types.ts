@@ -68,9 +68,16 @@ export interface QuoteItem {
   serviceSpecs?: string;
 }
 
+export type QuoteStatus = 'rascunho' | 'enviado' | 'aprovado' | 'recusado';
+
+// Venda vinda de um orçamento: quoteId liga a venda ao orçamento ao salvar no PDV
+export type PendingSale = Partial<Sale> & { quoteId?: string };
+
 export interface Quote {
   id: string;
   quoteNumber: string;
+  status?: QuoteStatus; // undefined = rascunho (orçamentos antigos)
+  convertedSaleId?: string; // preenchido ao converter o orçamento aprovado em venda
   clientName: string;
   clientPhone?: string;
   discount: number;
@@ -207,6 +214,11 @@ export interface ProductionOrder {
   quantity: number;
   date: string;
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
+  // Campos da produção personalizada (sob medida). Colunas aditivas da migration do Back-end.
+  deadline?: string; // prazo (YYYY-MM-DD)
+  totalValue?: number;
+  downPayment?: number; // sinal pago
+  attachments?: string[]; // URLs de fotos/anexos
 }
 
 export interface Delivery {

@@ -12,10 +12,10 @@ const t0 = new Date('2026-11-24T12:00:00.000Z');
 const plus = (ms: number) => new Date(t0.getTime() + ms);
 const HOUR = 3600_000;
 
-describe('teste grátis de 3 horas', () => {
-  it('dura exatamente 3 horas, com precisão de minuto e segundo', () => {
-    expect(TRIAL_DURATION_MS).toBe(3 * HOUR);
-    expect(trialEndsAt(t0).toISOString()).toBe('2026-11-24T15:00:00.000Z');
+describe('teste grátis de 1 hora', () => {
+  it('dura exatamente 1 hora, com precisão de minuto e segundo', () => {
+    expect(TRIAL_DURATION_MS).toBe(1 * HOUR);
+    expect(trialEndsAt(t0).toISOString()).toBe('2026-11-24T13:00:00.000Z');
     expect(trialEndsAt(t0, 0.5).toISOString()).toBe('2026-11-24T12:30:00.000Z');
   });
 
@@ -34,8 +34,8 @@ describe('teste grátis de 3 horas', () => {
 
   it('contagem regressiva em segundos nunca fica negativa', () => {
     const end = trialEndsAt(t0);
-    expect(secondsRemaining('trial', end, null, t0)).toBe(10800);
-    expect(secondsRemaining('trial', end, null, plus(2 * HOUR + 59 * 60_000 + 30_000))).toBe(30);
+    expect(secondsRemaining('trial', end, null, t0)).toBe(3600);
+    expect(secondsRemaining('trial', end, null, plus(59 * 60_000 + 30_000))).toBe(30);
     expect(secondsRemaining('trial', end, null, plus(5 * HOUR))).toBe(0);
   });
 });
@@ -71,7 +71,7 @@ describe('status efetivo e assinatura paga', () => {
   it('relógio do aparelho atrasado não estende o teste: o servidor decide por seconds_remaining', () => {
     // O app usa seconds_remaining do servidor; aqui só garantimos que a conta é feita sobre o "agora" informado.
     const end = trialEndsAt(t0);
-    expect(secondsRemaining('trial', end, null, plus(-24 * HOUR))).toBe(24 * 3600 + 10800);
+    expect(secondsRemaining('trial', end, null, plus(-24 * HOUR))).toBe(24 * 3600 + 3600);
   });
 });
 
