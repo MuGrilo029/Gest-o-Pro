@@ -227,6 +227,8 @@ const AppContent: React.FC = () => {
 
   const renderView = () => {
     if (!canAccessView(currentView)) {
+      // Permissões da loja ainda carregando (sem papel): espera em vez de mostrar erro.
+      if (!activeStore) return <LoadingScreen message="Abrindo sua loja..." />;
       return (
         <div className="flex flex-col items-center justify-center h-full text-wine-800 dark:text-slate-300">
           <div className="bg-red-100 dark:bg-red-900/20 p-6 rounded-full mb-4">
