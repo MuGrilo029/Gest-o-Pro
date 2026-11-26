@@ -880,8 +880,7 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
                         title="Marcar como concluído"
                         onClick={(e) => { 
                           e.stopPropagation(); 
-                          const todayStr = formatISO(new Date());
-                          updateTransaction({ ...t, status: 'PAID', dueDate: todayStr, date: todayStr }); 
+                          updateTransaction({ ...t, status: 'PAID' }); 
                         }}
                         className="p-1 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-900/30 rounded"
                       >

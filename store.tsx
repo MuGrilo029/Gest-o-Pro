@@ -807,7 +807,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const remainingAmount = original.amount - paidAmount;
 
-    // 1. Create PAID Transaction
+    // Pagamento total: quita o lançamento original no lugar, sem zerar nem duplicar linha.
+    if (remainingAmount <= 0) {
+      const { error: updateError } = await supabase.from('transactions').update({
+        status: 'PAID',
+        payment_method: method
+      }).eq('id', originalId);
+
+      if (updateError) {
+        addNotification('Erro ao registrar pagamento.', 'error');
+        return;
+      }
+
+      setData((prev: any) => ({
+        ...prev,
+        transactions: prev.transactions.map((t: Transaction) =>
+          t.id === originalId ? { ...t, status: 'PAID', paymentMethod: method } : t
+        )
+      }));
+
+      addNotification(`Pagamento de R$ ${paidAmount.toLocaleString('pt-BR')} registrado!`, 'success');
+      return;
+    }
+
+    // 1. Pagamento parcial: cria lançamento PAID com o valor pago
     const paidTrans: Transaction = {
       ...original,
       id: getUUID(),
@@ -840,24 +863,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
-    // 2. Update Original Transaction
-    if (remainingAmount <= 0) {
-      // If fully paid, just delete or mark original as PAID?
-      // User says: "subtract and lanza new transaction". So if R$ 2000 - R$ 2000, original becomes 0.
-      // Better to update original to remaining and if 0, maybe mark as PAID or handle gracefully.
-      const { error: updateError } = await supabase.from('transactions').update({
-        amount: 0,
-        status: 'PAID'
-      }).eq('id', originalId);
+    // 2. Atualiza saldo restante no lançamento original
+    const { error: updateError } = await supabase.from('transactions').update({
+      amount: remainingAmount
+    }).eq('id', originalId);
 
-      _updateLocalState(originalId, 0, 'PAID', paidTrans);
-    } else {
-      const { error: updateError } = await supabase.from('transactions').update({
-        amount: remainingAmount
-      }).eq('id', originalId);
-
-      _updateLocalState(originalId, remainingAmount, original.status, paidTrans);
+    if (updateError) {
+      addNotification('Erro ao atualizar saldo restante.', 'error');
+      return;
     }
+
+    _updateLocalState(originalId, remainingAmount, original.status, paidTrans);
 
     addNotification(`Pagamento de R$ ${paidAmount.toLocaleString('pt-BR')} registrado!`, 'success');
   };

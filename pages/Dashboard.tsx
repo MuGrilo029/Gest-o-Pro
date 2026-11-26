@@ -68,9 +68,9 @@ export const Dashboard: React.FC = () => {
       startDate = new Date(selectedYear, 0, 1);
       endDate = new Date(selectedYear, 11, 31, 23, 59, 59, 999);
     } else if (period === 'CUSTOM' && start && end) {
-      startDate = new Date(start);
+      startDate = parseISO(start);
       startDate.setHours(0, 0, 0, 0);
-      endDate = new Date(end);
+      endDate = parseISO(end);
       endDate.setHours(23, 59, 59, 999);
     }
     return { startDate, endDate };
@@ -102,7 +102,7 @@ export const Dashboard: React.FC = () => {
   };
 
   const { startDate, endDate } = getPeriodRange(timeRange, customStart, customEnd);
-  const { prevStartDate, prevEndDate } = getPreviousPeriodRange(timeRange, customStart, customEnd);
+  const { prevStartDate, prevEndDate } = getPreviousPeriodRange(timeRange, comparisonMode, customStart, customEnd);
 
   // --- DADOS CALCULADOS ---
 

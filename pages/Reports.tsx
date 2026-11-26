@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useAppStore } from '../store';
 import { Product } from '../types';
 import { Card, Button, Input, Modal } from '../components/UI';
-import { formatISO, parseISO, isInRange as utilsIsInRange } from '../lib/utils';
+import { formatISO, parseISO, isInRange as utilsIsInRange, formatDisplayDate } from '../lib/utils';
 
 import {
     TrendingUp,
@@ -469,7 +469,7 @@ export const Reports: React.FC = () => {
             return d >= threeMonthsAgo && d <= today;
         });
 
-        const avgFixedExpenses = last3MonthsTrans.filter(t => t.type === 'EXPENSE' && t.accountType === 'FIXED').reduce((acc, t) => acc + (Number(t.amount) || 0), 0) / 3 || 1;
+        const avgFixedExpenses = last3MonthsTrans.filter(t => t.type === 'EXPENSE' && t.accountType === 'FIXED').reduce((acc, t) => acc + (Number(t.amount) || 0), 0) / 3 || 0;
         const avgVariableExpenses = last3MonthsTrans.filter(t => t.type === 'EXPENSE' && t.accountType === 'VARIABLE').reduce((acc, t) => acc + (Number(t.amount) || 0), 0) / 3 || 0;
         const avgMonthlyExpenses = avgFixedExpenses + avgVariableExpenses;
 
@@ -737,7 +737,7 @@ export const Reports: React.FC = () => {
         }
 
         baseExpenses.forEach(t => {
-            const d = new Date(t.date);
+            const d = parseISO(t.date);
             const label = unit === 'day'
                 ? d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
                 : d.toLocaleDateString('pt-BR', { month: 'short' });
@@ -1636,9 +1636,9 @@ export const Reports: React.FC = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-wine-100 dark:divide-slate-700">
-                                {expenseTrans.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((t, i) => (
+                                {expenseTrans.sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime()).map((t, i) => (
                                     <tr key={i} className="hover:bg-wine-50/50">
-                                        <td className="p-3">{new Date(t.date).toLocaleDateString()}</td>
+                                        <td className="p-3">{formatDisplayDate(t.date)}</td>
                                         <td className="p-3 font-bold">{t.description}</td>
                                         <td className="p-3 text-[10px] uppercase font-black">{t.status}</td>
                                         <td className="p-3 text-right font-mono font-bold">R$ {formatCurrency(t.amount)}</td>
