@@ -2,22 +2,40 @@ import React, { useState } from 'react';
 import { Check, Clock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useStore } from '../contexts/StoreContext';
-import { PLANS, PlanCode, CHOOSE_PLAN_RPC, ChoosePlanResult, formatPlanPrice, planSellersLabel } from '../lib/plans';
+import { PLANS, PlanCode, PlanDefinition, CHOOSE_PLAN_RPC, ChoosePlanResult, formatPlanPrice, getPlan, planSellersLabel } from '../lib/plans';
 import { alertDialog, confirmDialog } from './UI';
 
 /**
- * Escolha de plano para o dono durante o teste grátis.
- * Só aparece para o dono da loja com teste ativo. Escolher um plano ativa os módulos
- * dele no servidor (a RPC decide tudo); esta tela não liga módulo por conta própria.
- * Pagamento online (Asaas) fica desligado até as chaves existirem: não há checkout aqui.
+ * Escolha de plano para o dono.
+ * - Durante o teste (`ended` falso): aparece com o teste ativo.
+ * - Teste encerrado (`ended` verdadeiro): fica no gate de acesso, no lugar da tela de venda.
+ *   Fluxo: escolher plano -> passo de pagamento (checkout Asaas, desligado até as chaves).
+ * A RPC grava o plano e aplica os módulos, mas não ativa a loja: a ativação depende do pagamento.
+ * Sem chave no código: o botão de pagamento fica desabilitado.
  */
-export const PlanChoice: React.FC = () => {
+export const PlanChoice: React.FC<{ ended?: boolean }> = ({ ended = false }) => {
   const { activeStore, subscription, isPlatformAdmin, reload } = useStore();
-  // activeStore é checado abaixo; a RPC usa a loja do próprio dono no servidor.
   const [busy, setBusy] = useState<PlanCode | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [chosen, setChosen] = useState<PlanDefinition | null>(null);
 
-  if (isPlatformAdmin || activeStore?.role !== 'OWNER' || subscription?.status !== 'trial') return null;
+  const eligible = ended ? subscription?.status === 'expired' : subscription?.status === 'trial';
+  if (isPlatformAdmin || activeStore?.role !== 'OWNER' || !eligible) return null;
+
+  if (chosen) {
+    return (
+      <section className="rounded-xl border border-wine-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-5 text-center max-w-md mx-auto" aria-labelledby="plan-checkout-title">
+        <h3 id="plan-checkout-title" className="text-lg font-semibold text-wine-900 dark:text-white mb-2">Pagamento do plano {chosen.name}</h3>
+        <p className="text-sm text-wine-600 dark:text-slate-400 mb-4">
+          Valor: {formatPlanPrice(chosen.priceCents)}/mês. O pagamento online ainda não está disponível nesta versão. Quando for ligado, a loja volta a funcionar com o plano escolhido.
+        </p>
+        <button type="button" disabled className="w-full py-2.5 rounded-lg bg-wine-900 text-white font-semibold opacity-60 cursor-not-allowed">
+          Pagar (indisponível)
+        </button>
+      </section>
+    );
+  }
+
 
   const choose = async (code: PlanCode, name: string, priceCents: number) => {
     const ok = await confirmDialog(
@@ -39,6 +57,10 @@ export const PlanChoice: React.FC = () => {
     const result = data as ChoosePlanResult | null;
     if (!result || result.plan !== code) {
       setMessage('Não foi possível confirmar o plano escolhido. Tente de novo em instantes.');
+      return;
+    }
+    if (ended) {
+      setChosen(getPlan(code));
       return;
     }
     await reload();
