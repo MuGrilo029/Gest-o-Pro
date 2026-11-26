@@ -166,7 +166,7 @@ export const SelfSignup: React.FC<SelfSignupProps> = ({ onBack }) => {
               Li e aceito os{' '}
               {TERMS_URL
                 ? <a href={TERMS_URL} target="_blank" rel="noopener noreferrer" className="underline">Termos de Uso</a>
-                : <span>Termos de Uso (publicação pendente)</span>}
+                : <span>Termos de Uso</span>}
               {' '}e a{' '}
               <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer" className="underline">Política de Privacidade</a>.
             </span>
@@ -185,7 +185,7 @@ export const SelfSignup: React.FC<SelfSignupProps> = ({ onBack }) => {
         </form>
 
         <p className="mt-4 text-center text-xs text-zinc-500 dark:text-zinc-400">
-          O teste dura 1 hora a partir do cadastro. Ao fim do prazo, o acesso expira; para continuar, escolha um plano.
+          O teste dura 1 hora a partir do cadastro. Ao fim do prazo, o acesso é bloqueado; para continuar, escolha um plano.
         </p>
 
         <button type="button" onClick={onBack} className="mt-5 w-full text-center text-sm text-zinc-600 dark:text-zinc-300 hover:underline">
