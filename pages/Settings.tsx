@@ -11,6 +11,7 @@ import { useStore } from '../contexts/StoreContext';
 import { formatCurrency, formatISO, getUUID } from '../lib/utils';
 import { DEFAULT_BRAND_COLOR } from '../lib/brand';
 import { PushNotificationStatus } from '../components/PushNotificationProvider';
+import { PlanChoice } from '../components/PlanChoice';
 
 
 export const Settings: React.FC = () => {
@@ -499,6 +500,8 @@ const ADMIN_HIDDEN_TABS = ['GENERAL', 'CATEGORIES', 'ORDERS', 'FEES', 'IMPORT_EX
       <h2 className="text-2xl font-bold text-wine-900 dark:text-white flex items-center gap-2">
         <SettingsIcon /> Configurações do Sistema
       </h2>
+
+      <PlanChoice />
 
       {/* Tabs */}
       <div className="flex flex-wrap gap-2 border-b border-wine-200 dark:border-slate-700 pb-1">
