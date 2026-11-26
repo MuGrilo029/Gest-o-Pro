@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../store';
 import { useStore } from '../contexts/StoreContext';
 import { ProductionOrder, Delivery } from '../types';
-import { Card, Button, Input, Modal, Badge, alertDialog } from './UI';
+import { Card, Button, Input, Modal, Badge, alertDialog, confirmDialog } from './UI';
 import { getUUID, formatBrazilDateTime, formatCurrency } from '../lib/utils';
 import { supabase } from '../lib/supabase';
 import { Wrench, Plus, Paperclip, Calendar, User, ArrowRight, ArrowLeft, Loader2 } from 'lucide-react';
@@ -192,6 +192,15 @@ export const CustomProductionBoard: React.FC<{ mode: 'STANDARD' | 'CUSTOM'; onMo
       if (!delivery) {
         alertDialog('Não há entrega vinculada a esta produção. Ative o módulo Entregas ou registre a entrega na tela de Entregas.');
         return;
+      }
+      // Saldo em aberto (total menos sinal): confirma antes de marcar como entregue
+      const saldo = Math.max(0, (o.totalValue || 0) - (o.downPayment || 0));
+      if (saldo > 0) {
+        const ok = await confirmDialog(
+          `Esta produção tem saldo em aberto de ${formatCurrency(saldo)}.\n\nConfirme que o saldo foi recebido antes de marcar como entregue.`,
+          { title: 'Saldo em aberto' }
+        );
+        if (!ok) return;
       }
       return updateDeliveryStatus(delivery.id, 'DELIVERED');
     }
