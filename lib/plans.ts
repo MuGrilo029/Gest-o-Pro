@@ -97,3 +97,9 @@ export const planSellersLabel = (plan: PlanDefinition): string =>
  * Ainda não existe: a migração 024 (apply_plan_modules + escolha pelo dono) não foi aplicada.
  */
 export const CHOOSE_PLAN_RPC = 'choose_trial_plan';
+
+/** Retorno da RPC: plano gravado e quantidade de módulos aplicados. Não ativa a loja. */
+export interface ChoosePlanResult {
+  plan: PlanCode;
+  modules_applied: number;
+}

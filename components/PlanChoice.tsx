@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Check, Clock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useStore } from '../contexts/StoreContext';
-import { PLANS, PlanCode, CHOOSE_PLAN_RPC, formatPlanPrice, planSellersLabel } from '../lib/plans';
+import { PLANS, PlanCode, CHOOSE_PLAN_RPC, ChoosePlanResult, formatPlanPrice, planSellersLabel } from '../lib/plans';
 import { alertDialog, confirmDialog } from './UI';
 
 /**
@@ -13,6 +13,7 @@ import { alertDialog, confirmDialog } from './UI';
  */
 export const PlanChoice: React.FC = () => {
   const { activeStore, subscription, isPlatformAdmin, reload } = useStore();
+  // activeStore é checado abaixo; a RPC usa a loja do próprio dono no servidor.
   const [busy, setBusy] = useState<PlanCode | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -20,23 +21,31 @@ export const PlanChoice: React.FC = () => {
 
   const choose = async (code: PlanCode, name: string, priceCents: number) => {
     const ok = await confirmDialog(
-      `Ativar o plano ${name} (${formatPlanPrice(priceCents)}/mês) nesta loja? Os módulos do plano serão liberados.`,
-      { title: 'Escolher plano', confirmLabel: 'Ativar plano' },
+      `Escolher o plano ${name} (${formatPlanPrice(priceCents)}/mês) para esta loja? Os módulos do plano serão aplicados. O teste grátis continua até a assinatura ser confirmada.`,
+      { title: 'Escolher plano', confirmLabel: 'Escolher plano' },
     );
     if (!ok) return;
     setBusy(code);
     setMessage(null);
-    const { error } = await supabase.rpc(CHOOSE_PLAN_RPC, { p_store: activeStore.id, p_plan: code });
+    const { data, error } = await supabase.rpc(CHOOSE_PLAN_RPC, { p_plan: code });
     setBusy(null);
     if (error) {
       const missing = error.code === 'PGRST202' || error.code === '42883' || /could not find the function|does not exist/i.test(error.message || '');
       setMessage(missing
-        ? 'A ativação de planos ainda não está disponível. Seu teste grátis continua normal.'
-        : 'Não foi possível ativar o plano agora. Tente de novo em instantes.');
+        ? 'A escolha de plano ainda não está disponível. Seu teste grátis continua normal.'
+        : 'Não foi possível salvar o plano agora. Tente de novo em instantes.');
+      return;
+    }
+    const result = data as ChoosePlanResult | null;
+    if (!result || result.plan !== code) {
+      setMessage('Não foi possível confirmar o plano escolhido. Tente de novo em instantes.');
       return;
     }
     await reload();
-    await alertDialog(`Plano ${name} ativado. Os módulos já estão liberados.`, 'Plano ativado');
+    await alertDialog(
+      `Plano ${name} escolhido. ${result.modules_applied} módulos foram aplicados à loja. O acesso continua no teste grátis até a assinatura ser confirmada.`,
+      'Plano escolhido',
+    );
   };
 
   return (
