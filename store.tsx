@@ -1377,7 +1377,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Itens de produto, estoque e total gravados em uma única transação no banco (migração 020: edit_sale_items).
     // Itens com variante ainda não passam por essa função: o banco exige ajuste manual de estoque.
     if (updatedSale.items.some(i => i.variantId)) {
-      addNotification('Esta venda tem produto com variante: o ajuste de estoque dela ainda é manual. Não foi salva.', 'error');
+      addNotification('Venda com variação: cancele e refaça', 'error');
       rollback();
       return false;
     }
