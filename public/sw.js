@@ -1,7 +1,8 @@
 // Service Worker para Web Push Notifications
 // Instalação e ativação do SW
 
-const CACHE_NAME = 'gestao-pro-v2';
+// v3: versão anterior guardava respostas do Supabase; ao ativar, esses caches são apagados
+const CACHE_NAME = 'gestao-pro-v3';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -126,29 +127,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Para APIs, usar Network First
+  // Chamadas ao Supabase (dados de loja, auth, storage): sempre da rede, nunca em cache.
+  // Sem cache de reserva: dados de uma conta não podem aparecer para outra no mesmo aparelho.
   if (event.request.url.includes('/rest/v1/') || event.request.url.includes('supabase')) {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          // Não cachear respostas de erro
-          if (!response || response.status !== 200) {
-            return response;
-          }
-
-          const responseToCache = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
-
-          return response;
-        })
-        .catch(() => {
-          return caches.match(event.request).then((response) => {
-            return response || new Response('Offline', { status: 503 });
-          });
-        })
-    );
+    event.respondWith(fetch(event.request));
     return;
   }
 

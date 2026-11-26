@@ -32,6 +32,7 @@ import { formatRemaining } from '../lib/subscription';
 import { TempPasswordNotice } from './TempPasswordNotice';
 import { passwordProblem } from '../lib/utils';
 import { supabase } from '../lib/supabase';
+import { fetchAdminMetrics, AdminMetrics, requireAudit } from '../lib/adminApi';
 
 interface InvoiceItem {
   id: string;
@@ -80,13 +81,14 @@ export const AdminDashboard: React.FC = () => {
   const [newStoreName, setNewStoreName] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newMode, setNewMode] = useState<'trial' | 'paid'>('trial');
-  const [newAmount, setNewAmount] = useState(3);
+  const [newAmount, setNewAmount] = useState(1);
   const [newUnit, setNewUnit] = useState<'hours' | 'days'>('hours');
   const [newNotes, setNewNotes] = useState('');
   const [newModules, setNewModules] = useState<ModuleKey[]>(
     MODULES.filter(m => !m.core && m.defaultEnabled).map(m => m.key)
   );
   const [creating, setCreating] = useState(false);
+  const [serverMetrics, setServerMetrics] = useState<AdminMetrics | 'unavailable' | null>(null);
   const [tempCred, setTempCred] = useState<{ email: string; password: string } | null>(null);
 
   const load = useCallback(async () => {
@@ -98,6 +100,13 @@ export const AdminDashboard: React.FC = () => {
       console.error('Erro ao carregar clientes do admin:', err);
     } finally {
       setLoading(false);
+    }
+    try {
+      const res = await fetchAdminMetrics();
+      setServerMetrics(res.available ? res.data : 'unavailable');
+    } catch (err) {
+      console.warn('Métricas do admin indisponíveis:', err);
+      setServerMetrics('unavailable');
     }
   }, [adminListClients]);
 
@@ -122,16 +131,11 @@ export const AdminDashboard: React.FC = () => {
     const fetchDetails = async () => {
       setLoadingDetails(true);
       try {
-        const [invRes, logsRes] = await Promise.all([
-          supabase.from('invoices').select('*').eq('store_id', selectedClient.storeId).order('created_at', { ascending: false }),
-          supabase.from('admin_audit_logs').select('*').eq('store_id', selectedClient.storeId).order('created_at', { ascending: false }).limit(10),
-        ]);
+        // Faturas e auditoria da loja entram com a migração 018 (ver lib/adminApi.ts)
         if (!cancelled) {
-          setClientInvoices(invRes.data || []);
-          setClientLogs(logsRes.data || []);
+          setClientInvoices([]);
+          setClientLogs([]);
         }
-      } catch (err) {
-        console.warn('Tabelas de faturas/auditoria ainda não migradas ou erro:', err);
       } finally {
         if (!cancelled) setLoadingDetails(false);
       }
@@ -140,22 +144,23 @@ export const AdminDashboard: React.FC = () => {
     return () => { cancelled = true; };
   }, [selectedClient]);
 
-  // Cálculos de Métricas SaaS do Dossiê
+  // Métricas: contagens da lista de lojas; MRR calculado pelo banco a partir do valor mensal de cada loja
   const metrics = useMemo(() => {
     const total = clients.length;
     let active = 0;
     let trial = 0;
     let pastDue = 0;
     let suspended = 0;
-    let mrrCents = 0;
+    let nextTrialEnd: number | null = null;
 
     for (const c of clients) {
       const eff = c.effectiveStatus;
       if (eff === 'active') {
         active++;
-        mrrCents += 19900; // Padrão R$ 199/mês
       } else if (eff === 'trial') {
         trial++;
+        const end = c.trialEndsAt ? c.trialEndsAt.getTime() : null;
+        if (end !== null && end > now && (nextTrialEnd === null || end < nextTrialEnd)) nextTrialEnd = end;
       } else if (eff === 'expired') {
         pastDue++;
       } else if (eff === 'suspended') {
@@ -163,20 +168,19 @@ export const AdminDashboard: React.FC = () => {
       }
     }
 
-    const pastDueCents = pastDue * 19900;
-    const churnRate = total > 0 ? ((suspended / total) * 100).toFixed(1) : '0.0';
-
+    const mrrAvailable = serverMetrics !== null && serverMetrics !== 'unavailable';
     return {
       total,
       active,
       trial,
       pastDue,
       suspended,
-      mrrCents,
-      pastDueCents,
-      churnRate,
+      nextTrialEnd,
+      mrrAvailable,
+      mrrCents: mrrAvailable ? (serverMetrics as AdminMetrics).mrr_cents : null,
+      churnRate: total > 0 ? ((suspended / total) * 100).toFixed(1) : '0.0',
     };
-  }, [clients]);
+  }, [clients, now, serverMetrics]);
 
   // Clientes filtrados por busca e aba
   const filteredClients = useMemo(() => {
@@ -207,16 +211,7 @@ export const AdminDashboard: React.FC = () => {
     if (!ok) return;
 
     try {
-      await supabase.rpc('admin_log_audit', {
-        p_store_id: client.storeId,
-        p_action: 'impersonate_start',
-        p_details: { store_name: client.name, started_at: new Date().toISOString() },
-      });
-    } catch (_) {
-      // Ignora se a migração 009 ainda não foi aplicada no Supabase remoto
-    }
-
-    try {
+      await requireAudit(client.storeId, 'impersonate_start', { store_name: client.name, started_at: new Date().toISOString() });
       await startImpersonation(client.storeId);
     } catch (err: any) {
       alertDialog(err.message || 'Erro ao alternar para a loja.', 'Erro');
@@ -225,6 +220,7 @@ export const AdminDashboard: React.FC = () => {
 
   const handleExtend = async (storeId: string, days: number) => {
     try {
+      await requireAudit(storeId, 'extend', { days });
       await adminExtend(storeId, { days });
       await load();
       alertDialog(`Prazo estendido em +${days} dias com sucesso.`, 'Sucesso');
@@ -245,6 +241,7 @@ export const AdminDashboard: React.FC = () => {
     if (!ok) return;
 
     try {
+      await requireAudit(client.storeId, 'set_status', { status: targetStatus });
       await adminSetStatus(client.storeId, targetStatus);
       await load();
     } catch (err: any) {
@@ -259,6 +256,7 @@ export const AdminDashboard: React.FC = () => {
       const pwdIssue = passwordProblem(newPassword);
       if (pwdIssue) throw new Error(pwdIssue);
 
+      await requireAudit(null, 'create_store', { email: newEmail, storeName: newStoreName, mode: newMode });
       const res = await adminCreateClient({
         email: newEmail,
         storeName: newStoreName,
@@ -345,59 +343,57 @@ export const AdminDashboard: React.FC = () => {
         />
       )}
 
-      {/* Grid de KPIs no Topo (Metric-First Grid do Dossiê) */}
+      {/* Visão geral: quatro cards calculados a partir da base (admin-spec.md, seção 2) */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         <Card className="p-4 sm:p-5">
           <div className="flex items-center justify-between text-zinc-500 dark:text-zinc-400 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider">MRR Ativo</span>
-            <DollarSign size={18} className="text-emerald-500" />
+            <span className="text-xs font-semibold uppercase tracking-wider">Lojas ativas</span>
+            <CheckCircle2 size={18} className="text-emerald-500" />
           </div>
-          <div className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 font-mono">
-            {fmtCurrency(metrics.mrrCents)}
-          </div>
-          <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 flex items-center gap-1">
-            <TrendingUp size={12} className="text-emerald-500" />
-            <span>{metrics.active} assinaturas ativas</span>
-          </div>
+          <div className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 font-mono">{metrics.active}</div>
+          <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">de {metrics.total} lojas</div>
         </Card>
 
         <Card className="p-4 sm:p-5">
           <div className="flex items-center justify-between text-zinc-500 dark:text-zinc-400 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider">Inadimplência</span>
-            <AlertTriangle size={18} className="text-amber-500" />
-          </div>
-          <div className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 font-mono">
-            {fmtCurrency(metrics.pastDueCents)}
-          </div>
-          <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-            {metrics.pastDue} loja(s) vencidas
-          </div>
-        </Card>
-
-        <Card className="p-4 sm:p-5">
-          <div className="flex items-center justify-between text-zinc-500 dark:text-zinc-400 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider">Em Trial (3h)</span>
+            <span className="text-xs font-semibold uppercase tracking-wider">Em teste</span>
             <Clock size={18} className="text-indigo-500" />
           </div>
-          <div className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 font-mono">
-            {metrics.trial}
-          </div>
+          <div className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 font-mono">{metrics.trial}</div>
           <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-            {metrics.total} lojas cadastradas
+            {metrics.nextTrialEnd !== null
+              ? `próxima expira em ${formatRemaining(Math.max(0, metrics.nextTrialEnd - now))}`
+              : 'teste de 1 hora'}
           </div>
         </Card>
 
+        <button type="button" onClick={() => setFilterTab('past_due')} className="text-left" aria-label="Ver lojas atrasadas">
+          <Card className="p-4 sm:p-5 h-full">
+            <div className="flex items-center justify-between text-zinc-500 dark:text-zinc-400 mb-2">
+              <span className="text-xs font-semibold uppercase tracking-wider">Atrasadas</span>
+              <AlertTriangle size={18} className="text-amber-500" />
+            </div>
+            <div className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 font-mono">{metrics.pastDue}</div>
+            <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">vencidas, ver lista</div>
+          </Card>
+        </button>
+
         <Card className="p-4 sm:p-5">
           <div className="flex items-center justify-between text-zinc-500 dark:text-zinc-400 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider">Suspensas / Churn</span>
-            <ShieldAlert size={18} className="text-rose-500" />
+            <span className="text-xs font-semibold uppercase tracking-wider">MRR</span>
+            <DollarSign size={18} className="text-emerald-500" />
           </div>
-          <div className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 font-mono">
-            {metrics.suspended}
-          </div>
-          <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-            Taxa de churn {metrics.churnRate}%
-          </div>
+          {metrics.mrrAvailable && metrics.mrrCents !== null ? (
+            <>
+              <div className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 font-mono">{fmtCurrency(metrics.mrrCents)}</div>
+              <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">soma do valor mensal das ativas</div>
+            </>
+          ) : (
+            <>
+              <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mt-1">Aguardando valores</div>
+              <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">cálculo disponível após a migração 018</div>
+            </>
+          )}
         </Card>
       </div>
 
@@ -710,7 +706,7 @@ export const AdminDashboard: React.FC = () => {
                     onChange={e => {
                       const m = e.target.value as 'trial' | 'paid';
                       setNewMode(m);
-                      setNewAmount(m === 'trial' ? 3 : 30);
+                      setNewAmount(m === 'trial' ? 1 : 30);
                       setNewUnit(m === 'trial' ? 'hours' : 'days');
                     }}
                     className="w-full text-xs p-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100"

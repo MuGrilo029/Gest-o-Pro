@@ -231,7 +231,8 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
     return {
       total: filteredData.reduce((acc, t) => acc + t.amount, 0),
       paid: filteredData.filter(t => t.status === 'PAID').reduce((acc, t) => acc + t.amount, 0),
-      pending: filteredData.filter(t => t.status === 'PENDING' || t.status === 'LATE').reduce((acc, t) => acc + t.amount, 0),
+      // A Vencer = pendente não vencido; Em Atraso = pendente vencido (status LATE). Sem sobreposição.
+      pending: filteredData.filter(t => t.status === 'PENDING').reduce((acc, t) => acc + t.amount, 0),
       late: filteredData.filter(t => t.status === 'LATE').reduce((acc, t) => acc + t.amount, 0),
     };
   }, [filteredData]);

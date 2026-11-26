@@ -41,7 +41,8 @@ export const Settings: React.FC = () => {
   const { isManager, brandColor, setBrandColor, legacyMode, isPlatformAdmin, impersonatedStore } = useStore();
   // Admin da plataforma sem personificar loja: esconde abas que só o lojista deve editar.
   const isPlatformAdminView = isPlatformAdmin && !impersonatedStore;
-  const ADMIN_HIDDEN_TABS = ['CATEGORIES', 'FEES'];
+  // Admin da plataforma: sem gestão interna da loja (categorias, taxas, empresa, emissão, importação)
+const ADMIN_HIDDEN_TABS = ['GENERAL', 'CATEGORIES', 'ORDERS', 'FEES', 'IMPORT_EXPORT'];
   const [brandDraft, setBrandDraft] = useState<string>(brandColor || DEFAULT_BRAND_COLOR);
   useEffect(() => { if (brandColor) setBrandDraft(brandColor); }, [brandColor]);
   const hasPermission = (_role: string) => isManager;

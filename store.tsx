@@ -334,7 +334,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const todayDateOnly = new Date().toISOString().split('T')[0];
       const formattedTransactions = (transData || []).map((t: any) => {
-        let status = t.status || 'PENDING';
+        // Status gravado fora do app pode vir em minúsculo ('paid'); normaliza para os valores do app
+        let status = String(t.status || 'PENDING').toUpperCase();
         const dueDate = t.due_date || t.date || todayStr.split('T')[0];
         
         // Auto-detect LATE status
