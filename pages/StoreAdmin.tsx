@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Boxes, Users, Store, Plus, Lock, AlertTriangle, Briefcase } from "lucide-react";
-import { Card, Button, Input, Badge, confirmDialog } from '../components/UI';
+import { Card, Button, Input, Badge } from '../components/UI';
+import { MotivoDialog } from '../components/MotivoDialog';
 import { TeamPanel } from "../components/TeamPanel";
 import { ClientsPanel } from "../components/ClientsPanel";
 import { useAppStore } from "../store";
@@ -18,6 +19,9 @@ export const StoreAdmin: React.FC = () => {
 
   const [tab, setTab] = useState<Tab>('CLIENTS');
   const [busyModule, setBusyModule] = useState<ModuleKey | null>(null);
+  const [pendingToggle, setPendingToggle] = useState<{ key: ModuleKey; enabled: boolean } | null>(null);
+  const [toggleError, setToggleError] = useState<string | null>(null);
+  const [toggleBusy, setToggleBusy] = useState(false);
 
   // Lojas
   const [newStoreName, setNewStoreName] = useState('');
@@ -26,21 +30,26 @@ export const StoreAdmin: React.FC = () => {
   );
   const [creatingStore, setCreatingStore] = useState(false);
 
-  const handleToggleModule = async (key: ModuleKey, enabled: boolean) => {
-    if (!enabled) {
-      const affected = dependentsOf(key).filter(k => moduleStates[k]);
-      if (affected.length > 0) {
-        const names = affected.map(k => getModule(k).name).join(', ');
-        if (!await confirmDialog(`Desligar ${getModule(key).name} também desliga: ${names}. Continuar?`)) return;
-      }
-    }
+  // Troca de módulo: abre o diálogo com motivo (e validade ao ligar). Grava pela RPC admin_set_module_override.
+  const handleToggleModule = (key: ModuleKey, enabled: boolean) => {
+    setToggleError(null);
+    setPendingToggle({ key, enabled });
+  };
+
+  const confirmToggle = async (reason: string, expiresAt?: string) => {
+    if (!pendingToggle) return;
+    const { key, enabled } = pendingToggle;
+    setToggleBusy(true);
+    setToggleError(null);
     setBusyModule(key);
     try {
-      await setModuleEnabled(key, enabled);
+      await setModuleEnabled(key, enabled, { reason, expiresAt });
       addNotification(`${getModule(key).name} ${enabled ? 'ligado' : 'desligado'}.`, 'success');
-    } catch (err: any) {
-      addNotification(err.message, 'error');
+      setPendingToggle(null);
+    } catch {
+      setToggleError('Não foi possível salvar. Nada foi alterado.');
     } finally {
+      setToggleBusy(false);
       setBusyModule(null);
     }
   };
@@ -68,6 +77,20 @@ export const StoreAdmin: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {pendingToggle && (
+        <MotivoDialog
+          title={`${pendingToggle.enabled ? 'Ligar' : 'Desligar'} ${getModule(pendingToggle.key).name}`}
+          message={pendingToggle.enabled
+            ? 'Liberação manual fora do plano. Motivo e validade são obrigatórios e ficam registrados.'
+            : 'Bloqueio manual do módulo nesta loja. O motivo fica registrado.'}
+          confirmLabel={pendingToggle.enabled ? 'Ligar módulo' : 'Desligar módulo'}
+          withExpiry={pendingToggle.enabled}
+          busy={toggleBusy}
+          error={toggleError}
+          onCancel={() => { if (!toggleBusy) setPendingToggle(null); }}
+          onConfirm={confirmToggle}
+        />
+      )}
       <div>
         <h1 className="text-2xl font-bold text-wine-950 dark:text-white">Administração da Plataforma</h1>
         <p className="text-wine-600 dark:text-slate-400">

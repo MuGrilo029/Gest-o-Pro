@@ -102,7 +102,7 @@ interface StoreContextValue {
   canAccessView: (view: AppView) => boolean;
   switchStore: (storeId: string) => Promise<void>;
   createStore: (name: string, enabledModules?: ModuleKey[]) => Promise<string | null>;
-  setModuleEnabled: (key: ModuleKey, enabled: boolean) => Promise<void>;
+  setModuleEnabled: (key: ModuleKey, enabled: boolean, opts: { reason: string; expiresAt?: string }) => Promise<void>;
   listMembers: () => Promise<StoreMember[]>;
   /** Cria a conta (e-mail + senha) e coloca na loja ativa. Se o e-mail já tiver conta, só adiciona. */
   createMember: (input: { email: string; name: string; password: string; role: StoreRole; permissions: AppView[] }) => Promise<{ existingAccount: boolean; temporaryPassword: string | null }>;
@@ -152,7 +152,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
     setStoredModules(results ? (Object.fromEntries(results) as Partial<Record<ModuleKey, boolean>>) : {});
 
-    // Cor da marca: ainda vem da linha 'brand' de store_modules (não é módulo). Pendente de RPC própria.
+    // Cor da marca: o acesso ('brand') é verificado por store_module_enabled.
+    // O valor da cor ainda sai da linha 'brand' de store_modules: não há RPC que devolva a cor (pendente no Back-end).
+    const { data: brandOn, error: brandErr } = await supabase.rpc('store_module_enabled', { p_store: storeId, p_module: BRAND_ROW_KEY });
+    if (brandErr || !brandOn) {
+      setBrandColorState(null);
+      return;
+    }
     const { data: brandRow } = await supabase
       .from('store_modules')
       .select('config')
@@ -287,54 +293,33 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     await reload();
   }, [legacyMode, activeStoreId, reload]);
 
-  const saveModules = useCallback(async (storeId: string, states: Partial<Record<ModuleKey, boolean>>) => {
-    const rows = Object.entries(states).map(([module_key, enabled]) => ({
-      store_id: storeId,
-      module_key,
-      enabled,
-      updated_at: new Date().toISOString(),
-    }));
-    if (rows.length === 0) return;
-    const { error } = await supabase.from('store_modules').upsert(rows, { onConflict: 'store_id,module_key' });
-    if (error) throw new Error(error.message);
-  }, []);
-
-  const createStore = useCallback(async (name: string, enabledModules?: ModuleKey[]) => {
+  // Criação de loja: só cria a loja. Os módulos vêm do plano (no servidor), não de uma escrita direta.
+  // O parâmetro de módulos é ignorado; a tela de Admin não escreve em store_modules.
+  const createStore = useCallback(async (name: string, _enabledModules?: ModuleKey[]) => {
     if (legacyMode) throw new Error('Aplique a migração multi-loja antes de criar lojas.');
     const { data, error } = await supabase.rpc('create_store', { p_name: name });
     if (error) throw new Error(error.message);
     const storeId = data as string;
-    if (enabledModules) {
-      const states: Partial<Record<ModuleKey, boolean>> = {};
-      for (const m of MODULES) if (!m.core) states[m.key] = enabledModules.includes(m.key);
-      await saveModules(storeId, resolveModuleStates(states));
-    }
     await reload();
     return storeId;
-  }, [legacyMode, saveModules, reload]);
+  }, [legacyMode, reload]);
 
-  const setModuleEnabled = useCallback(async (key: ModuleKey, enabled: boolean) => {
+  // Liga ou desliga um módulo pela RPC admin_set_module_override (admin-only, com motivo e validade).
+  // Módulos core não mudam. Dependências não são desligadas em cascata aqui: a confirmação é da tela.
+  const setModuleEnabled = useCallback(async (key: ModuleKey, enabled: boolean, opts: { reason: string; expiresAt?: string }) => {
     if (legacyMode) throw new Error('Aplique a migração multi-loja para ligar e desligar módulos.');
     if (!activeStoreId) return;
-    const mod = getModule(key);
-    if (mod.core) return;
-
-    const next: Partial<Record<ModuleKey, boolean>> = { ...moduleStates, [key]: enabled };
-    if (enabled) {
-      // Liga também o que este módulo precisa.
-      for (const dep of mod.dependsOn || []) next[dep] = true;
-    } else {
-      // Desliga quem depende dele.
-      for (const dep of dependentsOf(key)) next[dep] = false;
-    }
-    const resolved = resolveModuleStates(next);
-    const changed: Partial<Record<ModuleKey, boolean>> = {};
-    for (const m of MODULES) {
-      if (!m.core && resolved[m.key] !== moduleStates[m.key]) changed[m.key] = resolved[m.key];
-    }
-    await saveModules(activeStoreId, changed);
-    setStoredModules(prev => ({ ...prev, ...changed }));
-  }, [legacyMode, activeStoreId, moduleStates, saveModules]);
+    if (getModule(key).core) return;
+    const { error } = await supabase.rpc('admin_set_module_override', {
+      p_store: activeStoreId,
+      p_module: key,
+      p_action: enabled ? 'grant' : 'block',
+      p_reason: opts.reason,
+      p_expires_at: opts.expiresAt ?? null,
+    });
+    if (error) throw new Error(error.message);
+    await reload();
+  }, [legacyMode, activeStoreId, reload]);
 
   const requireStore = () => {
     if (legacyMode) throw new Error('Aplique a migração multi-loja para gerenciar a equipe.');
