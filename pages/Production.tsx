@@ -187,10 +187,12 @@ export const Production: React.FC = () => {
   const [showConfirmDetail, setShowConfirmDetail] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
   const [manualForm, setManualForm] = useState({
+    customerId: '',
     customerName: '',
     customerPhone: '',
     itemName: '',
-    quantity: 1
+    quantity: 1,
+    deadline: ''
   });
   const [manualSpecs, setManualSpecs] = useState<{ type: 'INTERNAL' | 'OUTSOURCED', data: string } | null>(null);
   const [showSpecsModal, setShowSpecsModal] = useState(false);
@@ -282,6 +284,10 @@ export const Production: React.FC = () => {
       alertDialog('Preencha o cliente e o item/modelo da produção.');
       return;
     }
+    if (!manualForm.deadline) {
+      alertDialog('Informe o prazo de entrega da produção.');
+      return;
+    }
 
     const newOrder: ProductionOrder = {
       id: getUUID(),
@@ -290,6 +296,7 @@ export const Production: React.FC = () => {
       itemName: manualForm.itemName,
       quantity: manualForm.quantity,
       specs: manualSpecs?.data || `Produção manual: ${manualForm.itemName}`,
+      deadline: manualForm.deadline,
       status: 'PENDING',
       date: formatBrazilDateTime()
     };
@@ -299,7 +306,7 @@ export const Production: React.FC = () => {
     
     // Reset state
     setShowManualModal(false);
-    setManualForm({ customerName: '', customerPhone: '', itemName: '', quantity: 1 });
+    setManualForm({ customerId: '', customerName: '', customerPhone: '', itemName: '', quantity: 1, deadline: '' });
     setManualSpecs(null);
   };
 
@@ -308,7 +315,7 @@ export const Production: React.FC = () => {
     : [];
 
   const selectManualCustomer = (customer: typeof customers[number]) => {
-    setManualForm(prev => ({ ...prev, customerName: customer.name, customerPhone: customer.phone || '' }));
+    setManualForm(prev => ({ ...prev, customerId: customer.id, customerName: customer.name, customerPhone: customer.phone || '' }));
     setCustomerSearch(customer.name);
     setShowCustomerResults(false);
     setIsNewCustomer(false);
@@ -886,9 +893,9 @@ export const Production: React.FC = () => {
             {showCustomerResults && matchingCustomers.length > 0 && (
               <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-wine-200 bg-white dark:bg-slate-800 shadow-xl overflow-hidden">
                 {matchingCustomers.map(customer => (
-                  <button type="button" key={customer.id} onClick={() => selectManualCustomer(customer)} className="w-full text-left px-3 py-2 hover:bg-wine-50 dark:hover:bg-slate-700 border-b last:border-0 border-wine-100 dark:border-slate-700">
+                  <button type="button" key={customer.id} onMouseDown={e => e.preventDefault()} onClick={() => selectManualCustomer(customer)} className="w-full text-left px-3 py-2 hover:bg-wine-50 dark:hover:bg-slate-700 border-b last:border-0 border-wine-100 dark:border-slate-700">
                     <span className="block font-bold text-sm text-wine-900 dark:text-white">{customer.name}</span>
-                    <span className="text-xs text-wine-500">{customer.phone || customer.cpfCnpj || 'Sem contato'}</span>
+                    <span className="text-xs text-wine-500">{[customer.phone, customer.cpfCnpj].filter(Boolean).join(' · ') || 'Sem contato'}</span>
                   </button>
                 ))}
               </div>
@@ -898,7 +905,7 @@ export const Production: React.FC = () => {
             <Input 
               label={isNewCustomer ? "Nome do Novo Cliente *" : "Cliente Selecionado *"}
               value={manualForm.customerName} 
-              onChange={e => setManualForm({ ...manualForm, customerName: e.target.value })} 
+              onChange={e => setManualForm({ ...manualForm, customerName: e.target.value, customerId: '' })} 
               placeholder="Ex: João Silva"
             />
             <Input 
@@ -923,6 +930,13 @@ export const Production: React.FC = () => {
               onChange={e => setManualForm({ ...manualForm, quantity: Number(e.target.value) })} 
             />
           </div>
+
+          <Input
+            label="Prazo de entrega *"
+            type="date"
+            value={manualForm.deadline}
+            onChange={e => setManualForm({ ...manualForm, deadline: e.target.value })}
+          />
 
           <div className="pt-2">
             <label className="text-xs font-bold uppercase text-wine-600 dark:text-slate-400 mb-1 block">Especificações Técnicas</label>
