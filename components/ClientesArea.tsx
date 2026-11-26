@@ -50,7 +50,8 @@ const endOf = (c: ClientRow): Date | null => {
 
 const remainingText = (c: ClientRow, now: number): string => {
   const end = endOf(c);
-  if (!end) return 'Sem vencimento';
+  // Loja vencida sem data gravada: não é "sem prazo". Mostra que a data falta, sem alterar o dado.
+  if (!end) return c.effectiveStatus === 'expired' ? 'Vencida (data não registrada)' : 'Sem vencimento';
   const ms = end.getTime() - now;
   return ms <= 0 ? 'Vencido' : formatRemaining(ms);
 };
