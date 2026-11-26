@@ -183,7 +183,8 @@ const AppContent: React.FC = () => {
   if (storeStatus === 'loading') return <LoadingScreen message="Carregando sua loja..." />;
   if (storeStatus === 'no_store') return <NoStore />;
   // Área de clientes nova (só admin da plataforma). O painel antigo continua em Clientes & Lojas.
-  if (isPlatformAdmin && window.location.hash === '#area-clientes') return <ClientesArea />;
+  // DialogHost precisa estar montado aqui: confirmDialog/alertDialog da área de Admin dependem dele.
+  if (isPlatformAdmin && window.location.hash === '#area-clientes') return <><DialogHost /><ClientesArea /></>;
   if (subscription && !subscription.accessOk) return <AccessExpired />;
   if (!isInitialized) return <LoadingScreen message="Carregando dados da loja..." />;
 
