@@ -583,7 +583,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         due_date: t.dueDate,
         status: t.status,
         has_boleto: t.hasBoleto,
-        account_type: 'FIXED'
+        account_type: 'FIXED',
+        sale_id: t.saleId || null
       }));
 
       const { error } = await supabase.from('transactions').insert(dbTransactions);
@@ -735,7 +736,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         has_boleto: tx.hasBoleto,
         attachment_url: tx.attachmentUrl,
         account_type: 'FIXED',
-        payment_method: tx.paymentMethod
+        payment_method: tx.paymentMethod,
+        sale_id: tx.saleId || null
       }));
 
       const { error } = await supabase.from('transactions').insert(dbTransactions);
@@ -771,7 +773,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       account_type: finalTransaction.accountType || 'VARIABLE',
       installments_total: finalTransaction.installmentsTotal,
       current_installment: finalTransaction.currentInstallment,
-      payment_method: finalTransaction.paymentMethod
+      payment_method: finalTransaction.paymentMethod,
+      sale_id: finalTransaction.saleId || null
     });
 
     // Fallback: Se der erro de coluna inexistente, tenta salvar sem o account_type
@@ -788,7 +791,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         status: finalTransaction.status,
         has_boleto: finalTransaction.hasBoleto,
         attachment_url: finalTransaction.attachmentUrl,
-        payment_method: finalTransaction.paymentMethod
+        payment_method: finalTransaction.paymentMethod,
+        sale_id: finalTransaction.saleId || null
       });
       addNotification('Aviso: Funcionalidade de conta fixa indisponível (Banco desatualizado).', 'info');
     } else if (error) {
