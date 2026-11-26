@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { clearAppCaches } from '../lib/cacheSecurity';
+import { clearAppCaches, clearSessionData } from '../lib/cacheSecurity';
 import { Session, User } from '@supabase/supabase-js';
 
 interface AuthContextType {
@@ -38,7 +38,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const prevUserId = lastUserIdRef.current;
             if (event === 'SIGNED_OUT' || (prevUserId && nextUserId && prevUserId !== nextUserId)) {
                 void clearAppCaches();
-                sessionStorage.removeItem('GESTAO_PRO_IMPERSONATED_STORE');
+                clearSessionData();
             }
             lastUserIdRef.current = nextUserId;
             setSession(session);
@@ -50,7 +50,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, []);
 
     const signOut = async () => {
-        await clearAppCaches();
+        try {
+            await clearAppCaches();
+        } catch (err) {
+            console.warn('Falha ao limpar caches no logout; seguindo com o logout:', err);
+        }
+        clearSessionData();
         await supabase.auth.signOut();
     };
 

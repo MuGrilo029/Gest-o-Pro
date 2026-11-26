@@ -73,6 +73,7 @@ export const SelfSignup: React.FC<SelfSignupProps> = ({ onBack }) => {
         // Com sessão ativa, a RPC cria a loja e o dono com 1 hora de teste.
         const { error: rpcError } = await supabase.rpc('start_self_trial', { p_name: storeName });
         if (rpcError) throw new Error(rpcError.message);
+        localStorage.removeItem(PENDING_TRIAL_KEY);
         window.location.reload();
         return;
       }

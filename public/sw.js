@@ -127,9 +127,15 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  const reqUrl = new URL(event.request.url);
+  // Só o próprio domínio é tratado pelo cache; outra origem segue direto, sem caches.put
+  if (reqUrl.origin !== self.location.origin) {
+    return;
+  }
+
   // Chamadas ao Supabase (dados de loja, auth, storage): sempre da rede, nunca em cache.
   // Sem cache de reserva: dados de uma conta não podem aparecer para outra no mesmo aparelho.
-  if (event.request.url.includes('/rest/v1/') || event.request.url.includes('supabase')) {
+  if (reqUrl.pathname.includes('/rest/v1/') || reqUrl.hostname.includes('supabase') || reqUrl.pathname.includes('supabase')) {
     event.respondWith(fetch(event.request));
     return;
   }
