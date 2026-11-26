@@ -7,6 +7,7 @@ import { MODULES } from '../lib/modules';
 import { requireAudit } from '../lib/adminApi';
 import { MotivoDialog } from './MotivoDialog';
 import { LojaCadastroForm } from './LojaCadastroForm';
+import { PlanoModulosTab, AssinaturaTab, AuditoriaTab } from './LojaFichaTabs';
 
 /**
  * Admin de lojas (rota #area-clientes, só admin da plataforma). Segue admin-plano/03-produto-ux.md.
@@ -361,25 +362,10 @@ export const ClientesArea: React.FC = () => {
               )}
 
               {tab === 'plano' && (
-                <div>
-                  <p className="mb-2">Plano: <strong>{PLAN_LABEL[selected.plan || ''] || selected.plan || '—'}</strong></p>
-                  <ul className="grid grid-cols-2 gap-1">
-                    {MODULES.map(m => (
-                      <li key={m.key} className="flex justify-between gap-2 border-b border-wine-50 dark:border-slate-700 py-1">
-                        <span>{m.name}</span>
-                        <span className="text-xs text-wine-500">{selected.modules.includes(m.key) ? 'Liberado' : 'Não liberado'}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="text-xs text-wine-500 mt-3">Liberações manuais e trocas de plano ainda não estão disponíveis nesta tela.</p>
-                </div>
+                <PlanoModulosTab key={selected.storeId} client={selected} onChanged={load} />
               )}
 
-              {tab === 'assinatura' && (
-                <div className="rounded-lg bg-wine-50 dark:bg-slate-900 p-4">
-                  <p>Pagamentos indisponíveis no momento. Os dados da assinatura continuam válidos.</p>
-                </div>
-              )}
+              {tab === 'assinatura' && <AssinaturaTab key={selected.storeId} client={selected} />}
 
               {tab === 'teste' && (
                 <div className="space-y-3">
@@ -398,11 +384,7 @@ export const ClientesArea: React.FC = () => {
                 </div>
               )}
 
-              {tab === 'auditoria' && (
-                <div className="rounded-lg bg-wine-50 dark:bg-slate-900 p-4">
-                  <p>Auditoria indisponível no momento.</p>
-                </div>
-              )}
+              {tab === 'auditoria' && <AuditoriaTab key={selected.storeId} client={selected} />}
 
               <div className="pt-4 border-t border-wine-100 dark:border-slate-700">
                 <button disabled={busyId === selected.storeId} onClick={() => toggleSuspend(selected)} className="px-3 py-2 rounded-lg border border-red-300 text-red-700 text-sm font-semibold disabled:opacity-60">
