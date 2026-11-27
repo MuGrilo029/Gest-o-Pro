@@ -4,6 +4,8 @@ import { Product, Customer, Quote, QuoteItem, FurnitureSpecs, Sale, QuoteStatus,
 import { formatBrazilDateTime, formatCurrency, formatDisplayDate, getUUID } from '../lib/utils';
 import { docProblem, findDocOwner } from '../lib/documents';
 import { Card, Button, Input, Select, Badge, formatCpfCnpj, formatPhone, Modal, confirmDialog, alertDialog } from '../components/UI';
+import { useHideBoleto } from '../hooks/useHideBoleto';
+import { withoutBoleto } from '../lib/boletos';
 import { Search, ShoppingCart, Trash, Plus, Minus, ArrowRight, ArrowLeft, Printer, FileText, Check, DollarSign, UserCheck, Calendar, Clock, History, Edit, CheckCircle, Trash2, Info, Upload, Image as ImageIcon, Loader2, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -84,6 +86,7 @@ export const Quotes: React.FC = () => {
     // Payment Data (Replicated from Sales logic)
     const [discount, setDiscount] = useState<number>(0);
     const [paymentMethod, setPaymentMethod] = useState('Dinheiro');
+    const hideBoleto = useHideBoleto();
     const [paymentType, setPaymentType] = useState<'FULL' | 'PARTIAL'>('FULL');
     const [downPayment, setDownPayment] = useState(0);
     const [isRemainingPaidNow, setIsRemainingPaidNow] = useState(true); // For Partial (Split vs Future)
@@ -832,7 +835,7 @@ export const Quotes: React.FC = () => {
                                             value={paymentMethod}
                                             onChange={e => setPaymentMethod(e.target.value)}
                                         >
-                                            {['Dinheiro', 'PIX', 'Cartão Crédito', 'Cartão Débito', 'Boleto'].map(m => <option key={m} value={m}>{m}</option>)}
+                                            {withoutBoleto(['Dinheiro', 'PIX', 'Cartão Crédito', 'Cartão Débito', 'Boleto'], hideBoleto, paymentMethod).map(m => <option key={m} value={m}>{m}</option>)}
                                         </Select>
                                     </div>
                                     <div className="col-span-2 p-3 bg-white dark:bg-slate-800 rounded border border-gray-200 dark:border-slate-600">
@@ -858,7 +861,7 @@ export const Quotes: React.FC = () => {
                                     value={paymentMethod}
                                     onChange={e => setPaymentMethod(e.target.value)}
                                 >
-                                    {['Dinheiro', 'PIX', 'Cartão Crédito', 'Cartão Débito', 'Boleto'].map(m => <option key={m} value={m}>{m}</option>)}
+                                    {withoutBoleto(['Dinheiro', 'PIX', 'Cartão Crédito', 'Cartão Débito', 'Boleto'], hideBoleto, paymentMethod).map(m => <option key={m} value={m}>{m}</option>)}
                                 </Select>
                             )}
 

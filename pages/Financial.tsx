@@ -3,6 +3,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../store';
 import { supabase } from '../lib/supabase';
 import { Card, Button, Input, Select, SearchableSelect, Table, Badge, Modal } from '../components/UI';
+import { useStore } from '../contexts/StoreContext';
+import { useHideBoleto } from '../hooks/useHideBoleto';
 import { Plus, CheckCircle, Trash2, Filter, X, Calendar, DollarSign, AlertCircle, Clock, TrendingUp, Sparkles, CalendarCheck, Search, BellRing, PieChart, FileText, Receipt, ArrowUpDown, ArrowUp, ArrowDown, Eye } from 'lucide-react';
 import { parseISO, formatISO, formatDisplayDate, getUUID, isInRange as utilsIsInRange } from '../lib/utils';
 import { Transaction, Sale } from '../types';
@@ -92,6 +94,9 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
   // Logic identifying the view
   const isPayable = type === 'PAYABLES';
   const isBoletoView = type === 'BOLETOS';
+  const hideBoleto = useHideBoleto();
+  // O botão "Relatórios" só aparece para quem abre a tela (no Início, Relatórios não faz parte do plano).
+  const canOpenReports = useStore().canAccessView('REPORTS');
   const isReceivable = type === 'RECEIVABLES';
 
   const [formData, setFormData] = useState<Partial<Transaction>>({});
@@ -134,7 +139,8 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
         if (!t.hasBoleto || t.type !== 'EXPENSE') return false;
       } else if (isPayable) {
         if (t.type !== 'EXPENSE') return false;
-        if (t.hasBoleto && t.status !== 'PAID') return false; // Show paid boletos in Accounts Payable
+        // Boletos em aberto ficam na tela Boletos; sem ela (Início) aparecem aqui para não sumirem.
+        if (!hideBoleto && t.hasBoleto && t.status !== 'PAID') return false; // Show paid boletos in Accounts Payable
       } else {
         // Receivables
         if (t.type !== 'INCOME') return false;
@@ -161,7 +167,7 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
 
       return true;
     });
-  }, [transactions, isPayable, isBoletoView, searchTerm, filterCategory, filterStatus, timeRange, selectedMonth, selectedYear, customStart, customEnd, filterAccountType]);
+  }, [transactions, isPayable, isBoletoView, searchTerm, filterCategory, filterStatus, timeRange, selectedMonth, selectedYear, customStart, customEnd, filterAccountType, hideBoleto]);
 
   // Data ordenada por coluna
   const sortedData = useMemo(() => {
@@ -535,7 +541,7 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
           </div>
 
           <div className="flex items-center gap-2">
-            {isPayable && (
+            {isPayable && canOpenReports && (
               <Button variant="secondary" onClick={() => {
                 localStorage.setItem('REPORTS_DEFAULT_TAB', 'EXPENSES');
                 navigateTo('REPORTS');
@@ -923,7 +929,7 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
                         href={t.attachmentUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        title="Ver Boleto/Anexo"
+                        title={hideBoleto ? 'Ver Anexo' : 'Ver Boleto/Anexo'}
                         className="p-1 text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 rounded flex items-center justify-center"
                         onClick={(e) => e.stopPropagation()}
                       >
@@ -1276,7 +1282,7 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
             <option value="CARTAO_DEBITO">Cartão de Débito</option>
             <option value="CARTAO_CREDITO">Cartão de Crédito</option>
             <option value="TRANSFERENCIA">Transferência</option>
-            <option value="BOLETO">Boleto</option>
+            {(!hideBoleto || formData.paymentMethod === 'BOLETO') && <option value="BOLETO">Boleto</option>}
           </Select>
 
 
