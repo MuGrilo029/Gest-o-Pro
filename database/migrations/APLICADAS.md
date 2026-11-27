@@ -66,6 +66,10 @@ Método: o banco local (PGlite) foi montado com `MASTER_SCHEMA.sql.example` + as
 
 047b, 048, 049, 050, 051, 052, 053, 054, 055, 056, 057, 058, 059, 060, 061, 062, 063 — nesta ordem. A 060 só redefine create_sale e cria _is_finite/_is_card_method/_is_debit_method (nenhuma tabela alterada). A 061 adiciona CHECK NOT VALID de finitude em sales, sale_items e transactions (sem mexer em dados). A 062 adiciona CHECK NOT VALID de 0 a 100 em card_fees.percentage. A 063 cria delete_sale e tira o DELETE direto de sales (policy sales_delete e privilégio); só junto com o front usando delete_sale. A 059 (tabelas: transactions, sales, sale_items; apaga _seller_sale_tx_ok) só junto com o front usando create_sale no addSale; sem isso, o vendedor não consegue vender. Ver a lista com as tabelas alteradas no relatório do Backend ao SeniorDev.
 
+### Pendente de aprovação
+
+- **064** (limite de desconto do vendedor, D4): escrita e testada só no PGlite, não aplicada. Altera `stores` (coluna `seller_max_discount_percent` com padrão 10, CHECK e gatilho), cria `set_seller_discount_limit` e redefine `create_sale`. Venda de vendedor com desconto acima de 10% passa a ser recusada assim que for aplicada.
+
 ## Aplicação de 27/11/2026 (SeniorDev, com aprovação do dono via Tonny Stark)
 
 - **Snapshot antes:** schema `snapshot_20261127` no próprio banco (36 tabelas de `public` copiadas, mais `_policies` 57, `_functions` 68, `_grants`, `_triggers` e `_storage_objects_meta`), sem acesso para anon e authenticated. Cópia local em JSON fora do repositório.
@@ -74,3 +78,9 @@ Método: o banco local (PGlite) foi montado com `MASTER_SCHEMA.sql.example` + as
 - **Lote 2** (só com o front novo): 059, 060, 061, 063 — sem erro, aplicadas logo antes da publicação.
 - **Verificação:** planos 1/3/6 e anual = 10×; `custom` inativo; core = dashboard, sales, customers, inventory, settings; `delete_sale` existe e `_seller_sale_tx_ok` não; `sales` sem policy nem GRANT de DELETE para authenticated; trigger `tg_sales_seller_guard`; CHECKs de finitude e de `card_fees`; anon sem EXECUTE em `create_sale` e `delete_sale`. Teste em transação desfeita, como vendedor real: INSERT direto em `sales` e em `transactions`, DELETE direto em `sales` e `delete_sale` foram recusados.
 - **Não aplicadas:** 023, 026, 027 e 029 (pendentes ou substituídas, ver acima). `purge_unconverted_trial` (052) existe, mas não está agendada nem foi executada.
+
+## Aplicação da 064 (27/11/2026, SeniorDev, com aprovação do dono via Tonny Stark)
+
+- **Snapshot antes:** schema `snapshot_20261127_064` (`stores`, `sales`, `_functions`, `_grants`, `_policies`), sem acesso para anon e authenticated; cópia local em JSON fora do repositório.
+- **064_limite_desconto_vendedor** aplicada sem erro, antes da publicação do front. Coluna `stores.seller_max_discount_percent` (NOT NULL, padrão 10; as 6 lojas ficaram com 10); anon sem EXECUTE em `create_sale` e `set_seller_discount_limit`.
+- **Teste em transação desfeita, como vendedor real** (com a loja ativa marcada só dentro da transação): desconto de 20 e de 10,02 sobre 100 recusado; 10 e 5 aceitos; mudar o limite por RPC recusado; UPDATE direto alterou 0 linhas. Nada gravado.

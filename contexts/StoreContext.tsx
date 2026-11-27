@@ -4,6 +4,7 @@ import { useAuth } from './AuthContext';
 import { AppView } from '../types';
 import { applyBrandColor, normalizeHex } from '../lib/brand';
 import { effectiveImpersonation } from '../lib/privacy';
+import { DEFAULT_SELLER_DISCOUNT_PERCENT, readDiscountPercent } from '../lib/discount';
 import {
   StoreMember,
   createStoreMember,
@@ -69,6 +70,9 @@ interface StoreContextValue {
   /** Assinatura da loja ativa (null no modo legado ou antes da migração 006). */
   subscription: Subscription | null;
   moduleStates: Record<ModuleKey, boolean>;
+  /** Desconto máximo do vendedor na loja ativa, em % (D4). */
+  sellerDiscountLimit: number;
+  saveSellerDiscountLimit: (percent: number) => Promise<void>;
   isModuleEnabled: (key: ModuleKey) => boolean;
   canAccessView: (view: AppView) => boolean;
   switchStore: (storeId: string) => Promise<void>;
@@ -108,6 +112,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [brandColor, setBrandColorState] = useState<string | null>(null);
+  // Guardado junto com a loja: o valor de uma loja nunca vale para outra (troca de loja ou de conta).
+  const [discountLimit, setDiscountLimit] = useState<{ storeId: string; percent: number } | null>(null);
   const [storedModules, setStoredModules] = useState<Partial<Record<ModuleKey, boolean>>>({});
 
   const loadModules = useCallback(async (storeId: string) => {
@@ -156,6 +162,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!user) {
       setStores([]);
       setActiveStoreId(null);
+      setDiscountLimit(null);
       setStatus('loading');
       return;
     }
@@ -229,6 +236,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setSubscription(null);
     }
 
+    // Limite de desconto do vendedor na loja ativa. Sem a coluna (064 não aplicada) ou com erro: padrão 10.
+    const { data: limitRow, error: limitError } = await supabase.from('stores')
+      .select('seller_max_discount_percent').eq('id', active).maybeSingle();
+    setDiscountLimit({ storeId: active, percent: readDiscountPercent(limitError ? null : (limitRow as any)?.seller_max_discount_percent) });
+
     if (acc && acc.access_ok === false) {
       setStoredModules({});
       setBrandColorState(null);
@@ -249,6 +261,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const role = activeStore?.role ?? null;
   const isManager = role === 'OWNER' || role === 'MANAGER';
   const moduleStates = useMemo(() => resolveModuleStates(storedModules), [storedModules]);
+
+  const sellerDiscountLimit = discountLimit && discountLimit.storeId === activeStoreId
+    ? discountLimit.percent
+    : DEFAULT_SELLER_DISCOUNT_PERCENT;
 
   const isModuleEnabled = useCallback((key: ModuleKey) => !!moduleStates[key], [moduleStates]);
 
@@ -332,6 +348,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setBrandColorState(clean);
   }, [legacyMode, activeStoreId]);
 
+  // Limite do vendedor (064): grava só pela RPC, sempre na loja ativa; o banco confere se é o dono.
+  const saveSellerDiscountLimit = useCallback(async (percent: number) => {
+    const { data, error } = await supabase.rpc('set_seller_discount_limit', { p_percent: percent });
+    if (error) {
+      throw new Error(isMissingFunction(error) ? 'O banco ainda não tem o limite de desconto (migração 064).' : error.message);
+    }
+    if (activeStoreId) setDiscountLimit({ storeId: activeStoreId, percent: readDiscountPercent(data) });
+  }, [activeStoreId]);
+
   const startImpersonation = useCallback(async (storeId: string, storeName?: string) => {
     assertCanImpersonate(isPlatformAdmin);
     await switchStore(storeId);
@@ -370,6 +395,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setBrandColor,
       subscription,
       moduleStates,
+      sellerDiscountLimit,
+      saveSellerDiscountLimit,
       isModuleEnabled,
       canAccessView,
       switchStore,

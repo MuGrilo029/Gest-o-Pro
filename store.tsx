@@ -4,6 +4,7 @@ import { Transaction, TransactionStatus, Product, ProductVariant, Supplier, Sale
 import { supabase } from './lib/supabase';
 import { parseISO, formatISO, formatBrazilDateTime, isSameMonth, getUUID } from './lib/utils';
 import { useStore } from './contexts/StoreContext';
+import { sellerDiscountProblem } from './lib/discount';
 
 interface AppState {
   currentView: AppView;
@@ -40,7 +41,7 @@ interface AppState {
   updateProduct: (p: Product) => void;
   deleteProduct: (id: string) => void;
 
-  addSale: (s: Sale) => void;
+  addSale: (s: Sale, onError?: (message: string) => void) => void;
   updateSale: (s: Sale) => void;
   deleteSale: (id: string) => void;
 
@@ -199,7 +200,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Loja ativa e módulos ligados. As automações abaixo só rodam se o módulo
   // de destino estiver ligado, para que uma venda nunca dependa de um módulo
   // que a loja não usa (ex.: venda com entrega sem o módulo de Entregas).
-  const { activeStore, status: storeStatus, isModuleEnabled, isManager } = useStore();
+  const { activeStore, status: storeStatus, isModuleEnabled, isManager, role, isPlatformAdmin, sellerDiscountLimit } = useStore();
 
   const [data, setData] = useState<any>({
     ...MOCK_DATA,
@@ -1090,10 +1091,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
    * O servidor faz estoque, encomendas, OS, entregas e lançamentos conforme os módulos ligados;
    * o front não repete nada disso. Vale para todos os papéis (o vendedor não tem mais INSERT direto).
    */
-  const addSale = async (s: Sale) => {
-    if (!s.items || s.items.length === 0) {
-      addNotification('Erro: Não é possível salvar uma venda sem itens.', 'error');
+  /** `onError` recebe a mensagem (o PDV mobile não mostra as notificações do desktop). */
+  const addSale = async (s: Sale, onError?: (message: string) => void) => {
+    const fail = (message: string) => {
+      addNotification(message, 'error');
+      onError?.(message);
       return false;
+    };
+    if (!s.items || s.items.length === 0) {
+      return fail('Erro: Não é possível salvar uma venda sem itens.');
     }
 
     // Sem o módulo de Entregas, toda venda é retirada na loja.
@@ -1105,20 +1111,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // total = subtotal − desconto, à vista sem entrada/restante, dividido com restante = total − entrada.
     const qty = (i: SaleItem) => Number(i.quantity);
     if (s.items.some(i => !Number.isInteger(qty(i)) || qty(i) <= 0)) {
-      addNotification('A quantidade de cada item deve ser maior que zero.', 'error');
-      return false;
+      return fail('A quantidade de cada item deve ser maior que zero.');
     }
     const subtotal = s.items.reduce((acc, i) => acc + qty(i) * (Number(i.unitPrice) || 0), 0);
     const discount = roundMoney(Number(s.discount) || 0);
     if (discount < 0 || discount > roundMoney(subtotal)) {
-      addNotification(`O desconto deve ficar entre 0 e o subtotal (${roundMoney(subtotal).toFixed(2)}).`, 'error');
-      return false;
+      return fail(`O desconto deve ficar entre 0 e o subtotal (${roundMoney(subtotal).toFixed(2)}).`);
     }
+    // Limite do vendedor (D4): bloqueia antes do envio; o create_sale confere de novo.
+    const discountProblem = sellerDiscountProblem({ role, isPlatformAdmin, subtotal, discount, limitPercent: sellerDiscountLimit });
+    if (discountProblem) return fail(discountProblem);
     const total = roundMoney(subtotal - discount);
     // A tela calcula o total; se divergir dos itens, mostra o erro em vez de corrigir em silêncio.
     if (Math.abs((Number(s.total) || 0) - total) > 0.01) {
-      addNotification(`O total da venda não confere com os itens (calculado: ${total.toFixed(2)}).`, 'error');
-      return false;
+      return fail(`O total da venda não confere com os itens (calculado: ${total.toFixed(2)}).`);
     }
     const partial = s.paymentType === 'PARTIAL';
     const downPayment = partial ? roundMoney(Math.min(Math.max(0, Number(s.downPayment) || 0), total)) : 0;
@@ -1178,9 +1184,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const { error } = await supabase.rpc('create_sale', { p_sale: pSale, p_items: pItems });
     if (error) {
       console.error('❌ STORE: Erro ao criar venda (create_sale):', error);
-      addNotification(`Erro ao criar venda: ${error.message}`, 'error');
       setData((prev: any) => ({ ...prev, sales: prev.sales.filter((sale: Sale) => sale.id !== s.id) }));
-      return false;
+      return fail(`Erro ao criar venda: ${error.message}`);
     }
 
     addNotification('Venda finalizada com sucesso', 'success');

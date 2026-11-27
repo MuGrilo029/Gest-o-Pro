@@ -139,9 +139,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           color: it.color,
         }))
       };
-      const saved = await store.addSale(newSale);
+      let reason = '';
+      const saved = await store.addSale(newSale, (message) => { reason = message; });
       if (!saved) {
-        addToast('Não foi possível salvar a venda.', 'error');
+        addToast(reason || 'Não foi possível salvar a venda.', 'error');
         return false;
       }
     }
