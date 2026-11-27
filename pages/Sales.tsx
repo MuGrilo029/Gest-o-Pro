@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../store';
 import { useStore } from '../contexts/StoreContext';
+import { sellerDiscountProblem } from '../lib/discount';
 import { Card, Button, Input, Select, Badge, formatCpfCnpj, formatPhone, Modal, alertDialog } from '../components/UI';
 import {
   ShoppingCart, Trash2, Plus, Minus, Check, Search, User, MapPin, Phone, FileText, Send,
@@ -380,6 +381,12 @@ export const Sales: React.FC = () => {
   // Desconto sempre entre 0 e o subtotal (valor negativo aumentaria o total).
   const effectiveDiscount = Math.min(Math.max(0, Number(discount) || 0), subtotal);
   const total = Math.max(0, subtotal - effectiveDiscount);
+  // Limite do vendedor (D4): avisa e bloqueia antes do envio (edição de venda é só de dono/gerente).
+  const { role, isPlatformAdmin, sellerDiscountLimit } = useStore();
+  const discountProblem = sellerDiscountProblem({ role, isPlatformAdmin, subtotal, discount: effectiveDiscount, limitPercent: sellerDiscountLimit });
+  const discountAlert = discountProblem
+    ? <p role="alert" data-testid="discount-limit" className="text-sm font-semibold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 rounded-lg p-3">{discountProblem}</p>
+    : null;
   // Entrada sempre entre 0 e o total (valor negativo ou acima do total distorce o restante)
   const effectiveDownPayment = Math.min(Math.max(0, Number(downPayment) || 0), total);
   const remainingAmount = Math.max(0, total - effectiveDownPayment);
@@ -446,6 +453,7 @@ export const Sales: React.FC = () => {
   };
 
   const goToConfirmation = () => {
+    if (discountProblem) return alertDialog(discountProblem);
     if (!customerName || (deliveryType === 'DELIVERY' && !customerAddress)) return alertDialog('Preencha os dados do cliente.');
     setStep('CONFIRM');
   };
@@ -765,6 +773,7 @@ export const Sales: React.FC = () => {
                     </div>
                   )}
                   <Input label="Desconto" type="number" min={0} max={subtotal} value={discount} onChange={e => setDiscount(Math.min(Math.max(0, Number(e.target.value) || 0), subtotal))} />
+                  {discountAlert}
                   <textarea className="w-full p-2 border rounded h-24" placeholder="Obs..." value={observations} onChange={e => setObservations(e.target.value)} />
                 </div>
               </Card>
@@ -948,16 +957,17 @@ export const Sales: React.FC = () => {
                   )}
                 </>
               )}
+              {discountAlert}
               {effectiveDiscount > 0 && <div className="flex justify-between text-sm text-gray-500"><span>Subtotal</span><span>R$ {subtotal.toFixed(2)}</span></div>}
               <div className="flex justify-between font-bold text-xl"><span>Total</span><span>R$ {total.toFixed(2)}</span></div>
               {editingSaleId ? (
                 <Button className="w-full h-12" disabled={cart.length === 0} onClick={() => startFinalize('FULL')}>Prosseguir <ArrowRight className="ml-2" /></Button>
               ) : (
                 <>
-                  <Button className="w-full h-12" disabled={cart.length === 0} onClick={() => startFinalize('QUICK')}>
+                  <Button className="w-full h-12" disabled={cart.length === 0 || !!discountProblem} onClick={() => startFinalize('QUICK')}>
                     <Check size={20} /> Finalizar venda
                   </Button>
-                  <Button variant="outline" className="w-full" disabled={cart.length === 0} onClick={() => startFinalize('FULL')}>
+                  <Button variant="outline" className="w-full" disabled={cart.length === 0 || !!discountProblem} onClick={() => startFinalize('FULL')}>
                     Continuar
                   </Button>
                 </>

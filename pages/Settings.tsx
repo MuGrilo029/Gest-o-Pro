@@ -12,6 +12,7 @@ import { formatCurrency, formatISO, getUUID } from '../lib/utils';
 import { DEFAULT_BRAND_COLOR } from '../lib/brand';
 import { PushNotificationStatus } from '../components/PushNotificationProvider';
 import { PlanChoice } from '../components/PlanChoice';
+import { SellerDiscountLimitField } from '../components/SellerDiscountLimitField';
 
 
 export const Settings: React.FC = () => {
@@ -404,6 +405,7 @@ const ADMIN_HIDDEN_TABS = ['GENERAL', 'CATEGORIES', 'ORDERS', 'FEES', 'IMPORT_EX
               </div>
               <p className="text-xs text-wine-500 dark:text-slate-400 mt-1">Muda os botões, menus e destaques desta loja. Vale para todos que usam a loja.</p>
             </div>
+            <SellerDiscountLimitField />
             <div className="pt-4">
               <Button type="submit">Salvar Alterações</Button>
             </div>

@@ -4,6 +4,7 @@ import { useAuth } from './AuthContext';
 import { AppView } from '../types';
 import { applyBrandColor, normalizeHex } from '../lib/brand';
 import { effectiveImpersonation } from '../lib/privacy';
+import { DEFAULT_SELLER_DISCOUNT_PERCENT } from '../lib/discount';
 import {
   StoreMember,
   createStoreMember,
@@ -69,6 +70,9 @@ interface StoreContextValue {
   /** Assinatura da loja ativa (null no modo legado ou antes da migração 006). */
   subscription: Subscription | null;
   moduleStates: Record<ModuleKey, boolean>;
+  /** Desconto máximo do vendedor na loja ativa, em % (D4). */
+  sellerDiscountLimit: number;
+  saveSellerDiscountLimit: (percent: number) => Promise<void>;
   isModuleEnabled: (key: ModuleKey) => boolean;
   canAccessView: (view: AppView) => boolean;
   switchStore: (storeId: string) => Promise<void>;
@@ -108,6 +112,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [brandColor, setBrandColorState] = useState<string | null>(null);
+  const [sellerDiscountLimit, setSellerDiscountLimit] = useState(DEFAULT_SELLER_DISCOUNT_PERCENT);
   const [storedModules, setStoredModules] = useState<Partial<Record<ModuleKey, boolean>>>({});
 
   const loadModules = useCallback(async (storeId: string) => {
@@ -332,6 +337,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setBrandColorState(clean);
   }, [legacyMode, activeStoreId]);
 
+  // TODO(064): ligar leitura e gravação quando o Backend entregar o contrato.
+  const saveSellerDiscountLimit = useCallback(async (_percent: number) => {
+    void setSellerDiscountLimit;
+    throw new Error('A gravação do limite ainda aguarda a migração 064.');
+  }, []);
+
   const startImpersonation = useCallback(async (storeId: string, storeName?: string) => {
     assertCanImpersonate(isPlatformAdmin);
     await switchStore(storeId);
@@ -370,6 +381,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setBrandColor,
       subscription,
       moduleStates,
+      sellerDiscountLimit,
+      saveSellerDiscountLimit,
       isModuleEnabled,
       canAccessView,
       switchStore,
