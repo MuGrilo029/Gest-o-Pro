@@ -31,9 +31,11 @@ test.describe('painel admin', () => {
       const created = db.stores.find(s => s.name === storeName)!;
       expect(created.plan).toBe('avancado');
       expect(created.status).toBe('active');
-      const call = db.calls.find(c => c.name === 'manage-users' && c.args.store_id === created.id);
-      expect(call?.args.password).toBe('12345678');
-      expect(call?.args.role).toBe('OWNER');
+      // Uma chamada só (create_store), com a chave de repetição; a tela não chama mais admin_create_client.
+      const calls = db.calls.filter(c => c.name === 'manage-users' && c.args.action === 'create_store');
+      expect(calls).toHaveLength(1);
+      expect(calls[0].args.request_id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(db.calls.some(c => c.name === 'admin_create_client')).toBe(false);
     }
   });
 

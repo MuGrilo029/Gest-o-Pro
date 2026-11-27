@@ -2,7 +2,8 @@ import { supabase } from './supabase';
 import { MODULES, ModuleKey } from './modules';
 import { PlanCode } from './plans';
 import { callManageUsers } from './teamApi';
-import { DEFAULT_TEMP_PASSWORD } from './utils';
+import type { CreateStoreData } from './createStoreRequest';
+import { DeletionPreview, parseDeletionPreview } from './storeDeletion';
 
 /**
  * Painel admin da plataforma (só o dono do SaaS, `is_platform_admin`; decisões 33–38 e 41).
@@ -115,50 +116,55 @@ export const listStores = async (
 
 // ---------------------------------------------------------------- criação
 
-export interface CreateStoreInput {
-  storeName: string;
-  ownerName: string;
-  email: string;
-  plan: PlanCode;
-  /** trial: duração padrão do servidor (decisão 3 pendente). paid: loja paga por `days`. */
-  mode: 'trial' | 'paid';
-  days?: number;
-}
+export type CreateStoreInput = CreateStoreData;
 
 export interface CreateStoreResult {
   storeId: string;
   accountCreated: boolean;
-  /** Senha provisória (padrão 12345678, decisão 40) quando a conta do dono foi criada agora. */
+  /** Senha provisória: só vem (e só aparece) quando a conta do dono foi criada agora. */
   temporaryPassword: string | null;
+  /** O servidor reconheceu a repetição do mesmo pedido: nada foi duplicado. */
+  alreadyCreated: boolean;
 }
 
-/** Cria a loja (RPC admin_create_client, mesma criação do cadastro) e, se preciso, a conta do dono. */
-export const createStore = async (input: CreateStoreInput): Promise<CreateStoreResult> => {
-  const data = await requireAdminFunction<any>('admin_create_client', {
-    p_email: input.email.trim(),
-    p_store_name: input.storeName.trim(),
-    p_modules: null,
-    p_mode: input.mode,
-    p_hours: null,
-    p_days: input.mode === 'paid' ? (input.days ?? 30) : null,
-    p_plan: input.plan,
-    p_notes: null,
-  });
-  const row = Array.isArray(data) ? data[0] : data;
-  const storeId = row?.store_id as string;
-  if (!storeId) throw new Error('O banco não devolveu a loja criada.');
-  if (row.account_exists) return { storeId, accountCreated: false, temporaryPassword: null };
-  // Senha provisória 12345678 enviada explicitamente (decisão 40); o servidor aplica a mesma se faltar.
-  const created = await callManageUsers({
-    action: 'create_member',
-    store_id: storeId,
+/**
+ * Cria loja e login do dono numa chamada só (Edge Function manage-users, action create_store).
+ * `requestId` é a chave de repetição: reenviar o mesmo pedido não cria outra loja.
+ */
+export const createStore = async (input: CreateStoreInput, requestId: string): Promise<CreateStoreResult> => {
+  const data = await callManageUsers({
+    action: 'create_store',
+    request_id: requestId,
+    store_name: input.storeName.trim(),
+    owner_name: input.ownerName.trim(),
     email: input.email.trim(),
-    name: input.ownerName.trim() || input.storeName.trim(),
-    password: DEFAULT_TEMP_PASSWORD,
-    role: 'OWNER',
-    permissions: [],
+    plan: input.plan,
+    mode: input.mode,
+    ...(input.mode === 'paid' ? { days: input.days ?? 30 } : {}),
   });
-  return { storeId, accountCreated: true, temporaryPassword: (created?.temporary_password as string) || DEFAULT_TEMP_PASSWORD };
+  if (!data?.store_id) throw new Error('O servidor não confirmou a criação da loja. Tente de novo.');
+  const accountCreated = data.account_created === true;
+  return {
+    storeId: String(data.store_id),
+    accountCreated,
+    temporaryPassword: accountCreated ? (data.temporary_password as string) || null : null,
+    alreadyCreated: data.already_created === true,
+  };
+};
+
+// ---------------------------------------------------------------- exclusão
+
+/** Prévia do que a exclusão apaga (action delete_store_preview). */
+export const previewDeleteStore = async (storeId: string, storeName: string): Promise<DeletionPreview> =>
+  parseDeletionPreview(await callManageUsers({ action: 'delete_store_preview', store_id: storeId }), storeName);
+
+/**
+ * Exclui a loja (action delete_store). Irreversível. Se falhar no meio, repetir a mesma chamada
+ * continua de onde parou (contrato do Backend).
+ */
+export const deleteStore = async (storeId: string, confirmName: string): Promise<void> => {
+  const data = await callManageUsers({ action: 'delete_store', store_id: storeId, confirm_name: confirmName });
+  if (!data || data.ok !== true) throw new Error('A exclusão não terminou. Tente de novo: ela continua de onde parou.');
 };
 
 // ---------------------------------------------------------------- prazo e status

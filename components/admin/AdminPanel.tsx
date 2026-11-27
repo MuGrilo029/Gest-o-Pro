@@ -10,6 +10,7 @@ import { PLANS, PlanCode, isPlanCode } from '../../lib/plans';
 import { CreateStoreForm } from './CreateStoreForm';
 import { PlanChangePanel } from './PlanChangePanel';
 import { ModuleOverridesPanel } from './ModuleOverridesPanel';
+import { DeleteStorePanel } from './DeleteStorePanel';
 import { TeamPanel } from '../TeamPanel';
 
 /**
@@ -50,12 +51,13 @@ const remainingText = (s: AdminStoreRow, now: number) => {
   return ms <= 0 ? `Vencido em ${s.endsAt.toLocaleDateString('pt-BR')}` : `${formatRemaining(ms)} (${s.endsAt.toLocaleDateString('pt-BR')})`;
 };
 
-type Tab = 'assinatura' | 'plano' | 'modulos' | 'equipe';
+type Tab = 'assinatura' | 'plano' | 'modulos' | 'equipe' | 'excluir';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'assinatura', label: 'Assinatura' },
   { id: 'plano', label: 'Plano' },
   { id: 'modulos', label: 'Módulos' },
   { id: 'equipe', label: 'Equipe' },
+  { id: 'excluir', label: 'Excluir' },
 ];
 
 const btn = 'px-3 py-2 rounded-lg text-sm font-semibold disabled:opacity-60';
@@ -65,7 +67,7 @@ const btnDanger = `${btn} border border-red-300 text-red-700 hover:bg-red-50 dar
 const field = 'rounded-lg border border-wine-200 dark:border-slate-600 px-3 py-2 text-sm bg-white dark:bg-slate-900 text-wine-950 dark:text-white';
 
 export const AdminPanel: React.FC = () => {
-  const { startImpersonation } = useStore();
+  const { startImpersonation, stopImpersonation, impersonatedStore, activeStore, reload } = useStore();
   const [rows, setRows] = useState<AdminStoreRow[]>([]);
   const [next, setNext] = useState<{ afterKey: string; afterId: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -77,6 +79,9 @@ export const AdminPanel: React.FC = () => {
   const [openId, setOpenId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('assinatura');
   const [creating, setCreating] = useState(false);
+  // Enquanto a criação está em andamento, o formulário não fecha.
+  const [createBusy, setCreateBusy] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [customDays, setCustomDays] = useState('30');
 
@@ -169,6 +174,19 @@ export const AdminPanel: React.FC = () => {
   };
 
   const openDetail = (s: AdminStoreRow) => { setOpenId(s.id); setTab('assinatura'); };
+  const closeCreate = () => { if (!createBusy) setCreating(false); };
+  const closeDetail = () => { if (!deleteBusy) setOpenId(null); };
+
+  /** Loja excluída: fecha o painel, tira da lista e sai dela se era a loja aberta. */
+  const afterDelete = async (s: AdminStoreRow) => {
+    setDeleteBusy(false);
+    setOpenId(null);
+    setRows(r => r.filter(x => x.id !== s.id));
+    await alertDialog(`A loja "${s.name}" foi excluída.`, 'Pronto');
+    if (impersonatedStore?.id === s.id) await stopImpersonation();
+    else if (activeStore?.id === s.id) await reload();
+    else await load();
+  };
 
   return (
     <div className="max-w-6xl mx-auto" data-testid="admin-panel">
@@ -277,19 +295,19 @@ export const AdminPanel: React.FC = () => {
       )}
 
       {creating && (
-        <div className="fixed inset-0 z-50 bg-black/30 md:flex md:justify-end" onClick={() => setCreating(false)}>
+        <div className="fixed inset-0 z-50 bg-black/30 md:flex md:justify-end" onClick={closeCreate}>
           <aside role="dialog" aria-modal="true" aria-label="Criar loja" onClick={e => e.stopPropagation()} className="bg-white dark:bg-slate-800 w-full md:w-[480px] h-full overflow-y-auto shadow-xl p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-wine-950 dark:text-white">Criar loja</h2>
-              <button onClick={() => setCreating(false)} aria-label="Fechar" className="p-2 rounded-lg hover:bg-wine-50 dark:hover:bg-slate-700"><X size={18} /></button>
+              <button onClick={closeCreate} disabled={createBusy} aria-label="Fechar" className="p-2 rounded-lg hover:bg-wine-50 dark:hover:bg-slate-700 disabled:opacity-40"><X size={18} /></button>
             </div>
-            <CreateStoreForm onCancel={() => setCreating(false)} onCreated={() => load()} />
+            <CreateStoreForm onCancel={() => setCreating(false)} onCreated={() => load()} onBusyChange={setCreateBusy} />
           </aside>
         </div>
       )}
 
       {selected && (
-        <div className="fixed inset-0 z-50 bg-black/30 md:flex md:justify-end" onClick={() => setOpenId(null)}>
+        <div className="fixed inset-0 z-50 bg-black/30 md:flex md:justify-end" onClick={closeDetail}>
           <aside role="dialog" aria-modal="true" aria-label={`Gerenciar ${selected.name}`} onClick={e => e.stopPropagation()} className="bg-white dark:bg-slate-800 w-full md:w-[640px] h-full overflow-y-auto shadow-xl">
             <div className="flex items-start justify-between gap-2 p-4 border-b border-wine-100 dark:border-slate-700">
               <div className="min-w-0">
@@ -301,13 +319,13 @@ export const AdminPanel: React.FC = () => {
               </div>
               <div className="flex gap-2 shrink-0">
                 <button onClick={() => openStore(selected)} className={`${btnOutline} flex items-center gap-1`}><Eye size={14} aria-hidden="true" /> Abrir loja</button>
-                <button onClick={() => setOpenId(null)} aria-label="Fechar" className="p-2 rounded-lg hover:bg-wine-50 dark:hover:bg-slate-700"><X size={18} /></button>
+                <button onClick={closeDetail} disabled={deleteBusy} aria-label="Fechar" className="p-2 rounded-lg hover:bg-wine-50 dark:hover:bg-slate-700 disabled:opacity-40"><X size={18} /></button>
               </div>
             </div>
 
             <nav className="flex gap-1 overflow-x-auto px-3 pt-2 border-b border-wine-100 dark:border-slate-700" role="tablist">
               {TABS.map(t => (
-                <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className={`whitespace-nowrap px-3 py-2 text-sm rounded-t-lg ${tab === t.id ? 'font-semibold text-wine-950 dark:text-white border-b-2 border-wine-900' : 'text-wine-600 dark:text-slate-400'}`}>{t.label}</button>
+                <button key={t.id} role="tab" aria-selected={tab === t.id} disabled={deleteBusy} onClick={() => setTab(t.id)} className={`whitespace-nowrap px-3 py-2 text-sm rounded-t-lg ${tab === t.id ? 'font-semibold text-wine-950 dark:text-white border-b-2 border-wine-900' : 'text-wine-600 dark:text-slate-400'}`}>{t.label}</button>
               ))}
             </nav>
 
@@ -369,6 +387,10 @@ export const AdminPanel: React.FC = () => {
               )}
 
               {tab === 'modulos' && <ModuleOverridesPanel key={selected.id} storeId={selected.id} />}
+
+              {tab === 'excluir' && (
+                <DeleteStorePanel key={selected.id} storeId={selected.id} storeName={selected.name} onBusyChange={setDeleteBusy} onDeleted={() => afterDelete(selected)} />
+              )}
 
               {tab === 'equipe' && (
                 <TeamPanel key={selected.id} store={{ id: selected.id, name: selected.name, plan: selected.plan }} onChanged={load} />

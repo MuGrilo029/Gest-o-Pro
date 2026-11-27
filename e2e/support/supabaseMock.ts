@@ -42,7 +42,7 @@ const PLAN_LIMITS: Record<string, number> = { inicio: 1, crescimento: 3, avancad
 const PLAN_RANK: Record<string, number> = { inicio: 0, crescimento: 1, avancado: 2 };
 const CORE = new Set(['dashboard', 'sales', 'customers', 'inventory', 'settings']);
 const PLAN_MODULES: Record<string, string[]> = {
-  inicio: [...CORE],
+  inicio: [...CORE, 'financial'], // 065: Financeiro também no Início
   crescimento: [...CORE, 'financial', 'boletos', 'reports', 'production', 'quotes', 'suppliers', 'orders'],
   avancado: [...CORE, 'financial', 'boletos', 'reports', 'production', 'quotes', 'suppliers', 'orders', 'deliveries', 'push_notifications', 'custom_production', 'brand'],
 };
@@ -66,6 +66,10 @@ export class MockDb {
   tables: Record<string, Row[]> = {};
   overrides: { storeId: string; module: string; enabled: boolean }[] = [];
   termsAccepted: { userId: string; version: string }[] = [];
+  /** create_store: pedidos já atendidos (chave de repetição → resposta). */
+  createRequests = new Map<string, { storeId: string; accountCreated: boolean }>();
+  /** Falhas e demora injetadas pelos testes no manage-users. */
+  faults: { createLogin?: number; lostResponse?: number; deleteStore?: number; delayMs?: number } = {};
   /** Usuário logado (pelo token da última chamada). */
   currentUserId: string | null = null;
   activeStore: Record<string, string> = {};
@@ -376,6 +380,58 @@ const RPC: Record<string, RpcHandler> = {
   start_self_trial: () => ({ body: null }),
 };
 
+/** manage-users: create_store, delete_store_preview e delete_store (contrato preliminar do Backend). */
+const handleStoreAction = (b: Row, db: MockDb): { status?: number; body: unknown } | null => {
+  if (!['create_store', 'delete_store_preview', 'delete_store'].includes(b.action)) return null;
+  if (!db.user()?.isPlatformAdmin) return { status: 403, body: { error: 'Só o administrador da plataforma.' } };
+
+  if (b.action === 'create_store') {
+    const done = db.createRequests.get(b.request_id);
+    if (done) return { body: { ok: true, store_id: done.storeId, account_created: done.accountCreated, temporary_password: null, already_created: true } };
+    const existing = db.users.find(u => u.email === b.email);
+    if (existing && db.members.some(m => m.userId === existing.id && m.role === 'OWNER')) {
+      return { status: 409, body: { error: 'UMA_LOJA_POR_DONO: este e-mail já é dono de uma loja.' } };
+    }
+    if (!existing && (db.faults.createLogin ?? 0) > 0) {
+      db.faults.createLogin! -= 1; // tudo ou nada: nenhuma loja sobra
+      return { status: 500, body: { error: 'Não foi possível criar o login do dono. Nenhuma loja foi criada.' } };
+    }
+    const now = Date.now();
+    const trial = b.mode === 'trial';
+    const s: MockStore = {
+      id: uuid(), name: b.store_name, status: trial ? 'trial' : 'active', plan: trial ? null : b.plan,
+      ownerEmail: b.email, endsAt: new Date(now + (trial ? 3600000 : (b.days || 30) * 86400000)).toISOString(), createdAt: new Date(now).toISOString(),
+    };
+    db.stores.push(s);
+    const u = existing ?? { id: uuid(), email: b.email, password: '12345678', name: b.owner_name };
+    if (!existing) db.users.push(u);
+    db.members.push({ storeId: s.id, userId: u.id, email: u.email, name: u.name, role: 'OWNER', permissions: [] });
+    db.createRequests.set(b.request_id, { storeId: s.id, accountCreated: !existing });
+    if ((db.faults.lostResponse ?? 0) > 0) {
+      db.faults.lostResponse! -= 1; // o servidor criou, mas a resposta se perdeu
+      return { status: 504, body: { error: 'O servidor demorou demais para responder.' } };
+    }
+    return { body: { ok: true, store_id: s.id, account_created: !existing, temporary_password: existing ? null : '12345678', already_created: false } };
+  }
+
+  const store = db.stores.find(s => s.id === b.store_id);
+  if (b.action === 'delete_store_preview') {
+    if (!store) return { status: 404, body: { error: 'Loja não encontrada.' } };
+    return { body: { store_name: store.name, counts: { sales: db.table('sales').length, products: db.table('products').length, store_members: db.members.filter(m => m.storeId === store.id).length, quotes: 0 }, files: 2 } };
+  }
+  // delete_store: repetir continua de onde parou (loja já apagada = ok).
+  if (!store) return { body: { ok: true } };
+  if (b.confirm_name !== store.name) return { status: 400, body: { error: 'O nome digitado não confere com o nome da loja.' } };
+  if ((db.faults.deleteStore ?? 0) > 0) {
+    db.faults.deleteStore! -= 1;
+    return { status: 500, body: { error: 'Falha ao apagar os arquivos. Tente de novo.' } };
+  }
+  db.members = db.members.filter(m => m.storeId !== store.id);
+  db.stores = db.stores.filter(s => s.id !== store.id);
+  for (const [uid, sid] of Object.entries(db.activeStore)) if (sid === store.id) delete db.activeStore[uid];
+  return { body: { ok: true } };
+};
+
 /** Lê os filtros simples do PostgREST que o app usa (coluna=eq.valor). */
 const eqFilters = (url: URL) => {
   const out: [string, string][] = [];
@@ -425,6 +481,9 @@ export const installSupabaseMock = async (page: Page, db: MockDb) => {
     // ---------------- Edge Functions
     if (path === '/functions/v1/manage-users') {
       db.calls.push({ name: 'manage-users', args: body || {} });
+      if (db.faults.delayMs) await new Promise(r => setTimeout(r, db.faults.delayMs));
+      const adminAction = handleStoreAction(body || {}, db);
+      if (adminAction) return json(route, adminAction.status ?? 200, adminAction.body);
       if (body?.action === 'create_member') {
         if (body.role === 'SELLER') {
           const st = db.stores.find(s => s.id === body.store_id);
