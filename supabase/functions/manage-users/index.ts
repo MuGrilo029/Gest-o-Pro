@@ -27,18 +27,21 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PERMISSION_RE = /^[A-Z0-9_]{1,40}$/;
 
-const PASSWORD_MIN = 10;
+// Política de senha (decisão 42 do dono): 8 a 72 caracteres, sem exigir números. Igual a lib/utils.ts.
+const PASSWORD_MIN = 8;
 const PASSWORD_MAX = 72; // limite do bcrypt
+// Senha provisória quando o ADMIN da plataforma cria a conta sem informar senha (decisão 40).
+// Risco registrado pela Segurança; troca obrigatória no 1º acesso só com confirmação do dono.
+const ADMIN_DEFAULT_PASSWORD = '12345678';
 
 const passwordProblem = (p: unknown): string | null => {
   if (typeof p !== 'string') return 'Informe a senha.';
   if (p.length < PASSWORD_MIN) return `A senha precisa ter pelo menos ${PASSWORD_MIN} caracteres.`;
   if (p.length > PASSWORD_MAX) return `A senha pode ter no máximo ${PASSWORD_MAX} caracteres.`;
-  if (!/[A-Za-z]/.test(p) || !/\d/.test(p)) return 'A senha precisa ter letras e números.';
   return null;
 };
 
-/** Senha provisória aleatória (16 caracteres, sem símbolos ambíguos). */
+/** Senha provisória aleatória (16 caracteres, sem símbolos ambíguos), quando dono/gerente cria sem senha. */
 const generatePassword = (): string => {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
   for (;;) {
@@ -111,6 +114,7 @@ Deno.serve(async (req: Request) => {
     const { data: existingProfile } = await admin.from('profiles').select('id').eq('email', email).maybeSingle();
     let userId: string | null = existingProfile?.id ?? null;
     let wasExisting = !!userId;
+    let createdNow = false;
     let temporaryPassword: string | null = null;
 
     // Mensagem única para qualquer recusa ligada a conta já existente: o
@@ -120,7 +124,7 @@ Deno.serve(async (req: Request) => {
     if (!userId) {
       let password = body.password;
       if (password === undefined || password === null || password === '') {
-        password = generatePassword();
+        password = isAdmin ? ADMIN_DEFAULT_PASSWORD : generatePassword();
         temporaryPassword = password;
       } else {
         const problem = passwordProblem(password);
@@ -138,6 +142,7 @@ Deno.serve(async (req: Request) => {
         return fail(isAdmin ? error?.message || 'Não foi possível criar a conta.' : REFUSED, 409);
       }
       userId = created.user.id;
+      createdNow = true;
     } else if (!isAdmin) {
       // Dono/gerente só mexe em quem já é VENDEDOR desta loja (atualiza permissões).
       // Conta de outra loja, administrador, dono ou gerente: recusa genérica.
@@ -156,6 +161,11 @@ Deno.serve(async (req: Request) => {
     );
     if (memberError) {
       console.error('upsert store_members falhou:', memberError.message);
+      // Conta recém-criada sem vínculo não fica órfã.
+      if (createdNow && userId) await admin.auth.admin.deleteUser(userId);
+      // Regras do banco com mensagem para a tela (migrações 049 e 050).
+      const msg = memberError.message || '';
+      if (msg.includes('LIMITE_VENDEDORES:') || msg.includes('UMA_LOJA_POR_DONO:')) return fail(msg, 409);
       return fail('Não foi possível salvar o membro.', 500);
     }
 
