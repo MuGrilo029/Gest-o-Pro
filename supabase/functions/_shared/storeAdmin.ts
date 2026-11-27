@@ -24,7 +24,10 @@ const dbFail = (error: any, fallback: string): Reply => {
 };
 
 /** Conta cadastrada por qualquer pessoa e ainda não confirmada nunca é ligada a uma loja. */
-export const UNCONFIRMED = 'CONTA_NAO_CONFIRMADA: este e-mail tem um cadastro ainda não confirmado. Peça para a pessoa confirmar o e-mail, ou remova o cadastro pendente, e tente de novo.';
+const UNCONFIRMED_BASE = 'CONTA_NAO_CONFIRMADA: este e-mail tem um cadastro ainda não confirmado. Se a própria pessoa não fez esse cadastro, ela não deve clicar no link: remova o cadastro pendente e ';
+// Não pedir a confirmação: se o cadastro foi feito por um terceiro, confirmar ativaria a senha dele.
+const UNCONFIRMED = UNCONFIRMED_BASE + 'crie a loja de novo.';
+export const UNCONFIRMED_MEMBER = UNCONFIRMED_BASE + 'adicione a pessoa de novo.';
 
 export async function createStore(caller: any, admin: any, body: any, tempPassword: string): Promise<Reply> {
   const requestId = typeof body?.request_id === 'string' ? body.request_id : '';

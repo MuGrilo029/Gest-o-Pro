@@ -106,7 +106,7 @@ describe('create_store', () => {
     const before = { users: fn.calls.createUser, deleted: fn.calls.deleteUser, stores: (await t.sql('SELECT id FROM stores')).length };
     const res = await fn.call(admin, input('vitima@teste.local'));
     expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/^CONTA_NAO_CONFIRMADA:/);
+    expect(res.body.error).toMatch(/^CONTA_NAO_CONFIRMADA:.*não deve clicar no link.*crie a loja de novo\.$/);
     for (const q of [`SELECT * FROM admin_create_client('vitima@teste.local', 'X')`,
       `SELECT admin_create_store_with_owner(gen_random_uuid(), '${id}', 'X', 'inicio')`]) {
       expect(await t.fails(admin, q), q).toMatch(/CONTA_NAO_CONFIRMADA/);
@@ -126,7 +126,11 @@ describe('create_store', () => {
     for (const role of ['OWNER', 'MANAGER', 'SELLER']) {
       const res = await fn.call(admin, { ...body, role });
       expect(res.status, role).toBe(409);
-      expect(res.body.error, role).toMatch(/^CONTA_NAO_CONFIRMADA:/);
+      expect(res.body.error, role).toMatch(/^CONTA_NAO_CONFIRMADA:.*não deve clicar no link.*adicione a pessoa de novo\.$/);
+    }
+    // A RPC antiga não serve de atalho: ninguém logado a executa (069).
+    for (const who of [admin, boss]) {
+      expect(await t.fails(who, `SELECT add_store_member($1, 'pendente@teste.local', 'SELLER')`, [store])).toMatch(/permission denied/);
     }
     const byOwner = await fn.call(boss, { ...body, role: 'SELLER' });
     expect(byOwner.body.error).toBe('Não foi possível adicionar este e-mail. Solicite ao administrador da plataforma.');

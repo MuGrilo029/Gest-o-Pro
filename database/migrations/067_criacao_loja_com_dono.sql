@@ -113,7 +113,7 @@ BEGIN
     RAISE EXCEPTION 'CONTA_INEXISTENTE: este e-mail ainda não tem login. Crie a loja pelo painel, que cria o login junto.' USING ERRCODE = 'P0001';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = v_user AND u.email_confirmed_at IS NOT NULL) THEN
-    RAISE EXCEPTION 'CONTA_NAO_CONFIRMADA: este e-mail tem um cadastro ainda não confirmado. Peça para a pessoa confirmar o e-mail, ou remova o cadastro pendente, e tente de novo.' USING ERRCODE = 'P0001';
+    RAISE EXCEPTION 'CONTA_NAO_CONFIRMADA: este e-mail tem um cadastro ainda não confirmado. Se a própria pessoa não fez esse cadastro, ela não deve clicar no link: remova o cadastro pendente e crie a loja de novo.' USING ERRCODE = 'P0001';
   END IF;
   IF v_user IS NOT NULL AND EXISTS (SELECT 1 FROM public.store_members m WHERE m.user_id = v_user AND m.role = 'OWNER') THEN
     RAISE EXCEPTION 'UMA_LOJA_POR_DONO: esta conta já é dona de outra loja.' USING ERRCODE = 'P0001';
