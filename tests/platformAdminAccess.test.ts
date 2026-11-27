@@ -62,4 +62,11 @@ describe('impersonação só para is_platform_admin (startImpersonation)', () =>
     expect(from).toBeGreaterThan(-1);
     expect(block).toMatch(/if \(!platformAdmin\) \{[\s\S]*setImpersonatedStore\(null\)[\s\S]*sessionStorage\.removeItem\('GESTAO_PRO_IMPERSONATED_STORE'\)/);
   });
+
+  it('o contexto só expõe impersonatedStore ao is_platform_admin (inclusive antes do perfil carregar)', () => {
+    const src = readFileSync(resolve(__dirname, '../contexts/StoreContext.tsx'), 'utf8');
+    expect(src).toContain('impersonatedStore: isPlatformAdmin ? impersonatedStore : null');
+    expect(src).toContain('const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)');
+  });
 });
+

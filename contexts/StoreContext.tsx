@@ -516,7 +516,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       role,
       isManager,
       isPlatformAdmin,
-      impersonatedStore,
+      // Só exposta ao dono do SaaS: até o perfil carregar (isPlatformAdmin = false), nada de loja impersonada na tela.
+      impersonatedStore: isPlatformAdmin ? impersonatedStore : null,
       startImpersonation,
       stopImpersonation,
       brandColor,
