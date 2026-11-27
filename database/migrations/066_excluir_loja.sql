@@ -23,6 +23,9 @@ BEGIN;
 ALTER TABLE public.stores ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
 
 ALTER TABLE public.terms_acceptances DROP CONSTRAINT IF EXISTS terms_acceptances_user_id_fkey;
+-- O autor do log de auditoria (ex.: quem escolheu o plano no trial) tem FK NO ACTION para auth.users; sem isto
+-- apagar o login falha e a exclusão fica "parcial" para sempre. O admin_id continua gravado como UUID órfão.
+ALTER TABLE public.admin_audit_logs DROP CONSTRAINT IF EXISTS admin_audit_logs_admin_id_fkey;
 
 CREATE TABLE IF NOT EXISTS public.store_deletions (
   store_id uuid PRIMARY KEY REFERENCES public.stores(id) ON DELETE RESTRICT,
@@ -52,14 +55,18 @@ RETURNS text[] LANGUAGE sql IMMUTABLE SET search_path TO '' AS $$
                'billing_gateway_requests', 'upgrade_payment_events', 'store_deletions']
 $$;
 
--- >>> REGRA DE LOGINS (decisão do dono 27/11: apaga tudo, incluindo os logins da loja; não manter nenhum). <<<
--- NULL = apagar; texto = manter, com o motivo. Só o admin da plataforma (dono do SaaS) é preservado:
--- ele não é login de loja. Quem tem outra loja ou aparece no log de auditoria também é apagado;
--- o log de auditoria e o aceite dos Termos mantêm o user_id como UUID órfão (retenção, sem FK).
+-- >>> REGRA DE LOGINS (decisão do dono 27/11: apaga tudo, incluindo os logins da loja). <<<
+-- NULL = apagar; texto = manter, com o motivo.
+-- Mantidos: (a) admin da plataforma (dono do SaaS, não é login de loja); (b) OWNER de outra loja não excluída,
+-- porque store_members é ON DELETE CASCADE e a outra loja ficaria sem dono. Membro (não OWNER) de outra loja é apagado.
+-- O log de auditoria e o aceite dos Termos mantêm o user_id como UUID órfão (retenção, sem FK).
 CREATE OR REPLACE FUNCTION public._store_login_keep_reason(p_user uuid, p_store uuid)
 RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO '' AS $$
   SELECT CASE
     WHEN COALESCE((SELECT p.is_platform_admin FROM public.profiles p WHERE p.id = p_user), false) THEN 'admin_da_plataforma'
+    WHEN EXISTS (SELECT 1 FROM public.store_members m JOIN public.stores s ON s.id = m.store_id
+                  WHERE m.user_id = p_user AND m.store_id <> p_store AND m.role = 'OWNER' AND s.deleted_at IS NULL)
+      THEN 'dono_de_outra_loja'
   END
 $$;
 
@@ -189,7 +196,12 @@ BEGIN
    WHERE o.bucket_id IN ('products', 'producao-anexos', 'boletos') AND (storage.foldername(o.name))[1] = p_store::text;
   SELECT COALESCE(jsonb_agg(jsonb_build_object('user_id', m.user_id, 'email', u.email, 'role', m.role,
            'action', CASE WHEN public._store_login_keep_reason(m.user_id, p_store) IS NULL THEN 'apagar' ELSE 'manter' END,
-           'reason', public._store_login_keep_reason(m.user_id, p_store))
+           'reason', public._store_login_keep_reason(m.user_id, p_store),
+           'other_store_names', CASE WHEN public._store_login_keep_reason(m.user_id, p_store) = 'dono_de_outra_loja'
+             THEN (SELECT COALESCE(jsonb_agg(s2.name ORDER BY s2.name), '[]'::jsonb)
+                     FROM public.store_members m2 JOIN public.stores s2 ON s2.id = m2.store_id
+                    WHERE m2.user_id = m.user_id AND m2.role = 'OWNER' AND m2.store_id <> p_store AND s2.deleted_at IS NULL)
+             ELSE NULL END)
            ORDER BY CASE m.role WHEN 'OWNER' THEN 0 WHEN 'MANAGER' THEN 1 ELSE 2 END, u.email), '[]'::jsonb)
     INTO v_logins FROM public.store_members m JOIN auth.users u ON u.id = m.user_id WHERE m.store_id = p_store;
   RETURN jsonb_build_object(
