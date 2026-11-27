@@ -413,20 +413,20 @@ const AppContent: React.FC = () => {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col h-full overflow-hidden print:overflow-visible print:h-auto">
-        {/* Banner Obrigatório de Impersonação / Modo Suporte */}
+        {/* Banner obrigatório da impersonação (só o dono do SaaS; decisão 36) */}
         {impersonatedStore && (
           <div className="bg-amber-500 text-zinc-950 font-medium px-4 py-2 flex items-center justify-between text-xs sm:text-sm z-30 shadow-sm shrink-0 border-b border-amber-600">
             <div className="flex items-center gap-2">
               <span className="text-base" role="img" aria-label="Aviso">⚠️</span>
               <span>
-                <strong>Modo Suporte / Impersonação:</strong> Você está visualizando a loja <u>{impersonatedStore.name}</u>.
+                <strong>Loja aberta pelo admin:</strong> você está visualizando a loja <u>{impersonatedStore.name}</u>.
               </span>
             </div>
             <button
               onClick={stopImpersonation}
               className="bg-zinc-950 text-white px-3 py-1 rounded-md text-xs font-bold hover:bg-zinc-800 transition-colors shadow-xs"
             >
-              Encerrar Suporte e Voltar ao Admin
+              Sair da loja e voltar às assinaturas
             </button>
           </div>
         )}

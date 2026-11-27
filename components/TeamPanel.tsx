@@ -9,10 +9,11 @@ import { TempPasswordNotice } from './TempPasswordNotice';
 import { DEFAULT_TEMP_PASSWORD, PASSWORD_RULE_LABEL, passwordProblem } from '../lib/utils';
 import { MODULES, ROLE_LABELS, SELLER_ASSIGNABLE_VIEWS, SELLER_DEFAULT_VIEWS, StoreRole } from '../lib/modules';
 import {
-  StoreMember, countSellers, createStoreMember, listStoreMembers, maskEmail,
+  StoreMember, countSellers, createStoreMember, listStoreMembers,
   removeStoreMember, setStoreMemberPassword, updateStoreMember,
 } from '../lib/teamApi';
 import { planForLimits, planSellersLabel } from '../lib/plans';
+import { displayEmail, memberLabel } from '../lib/privacy';
 
 const ROLE_HELP: Record<StoreRole, string> = {
   OWNER: 'Acesso a todas as telas da loja e cadastra vendedores. Não cria lojas nem mexe em módulos.',
@@ -89,9 +90,9 @@ export const TeamPanel: React.FC<{
   const canManage = (m: StoreMember) => isPlatformAdmin || m.role === 'SELLER';
 
   /** E-mail de outra pessoa como aparece na tela. */
-  const shownEmail = (email: string) => (isPlatformAdmin ? email : maskEmail(email));
+  const shownEmail = (email: string) => displayEmail(email, isPlatformAdmin);
   /** Identificação em avisos e aria-labels: sem e-mail completo para quem não é admin. */
-  const who = (m: StoreMember) => (isPlatformAdmin ? m.email : (m.name?.trim() || maskEmail(m.email)));
+  const who = (m: StoreMember) => memberLabel(m, isPlatformAdmin);
 
   const [members, setMembers] = useState<StoreMember[]>([]);
   const [loading, setLoading] = useState(false);

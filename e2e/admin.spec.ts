@@ -32,8 +32,7 @@ test.describe('painel admin', () => {
       expect(created.plan).toBe('avancado');
       expect(created.status).toBe('active');
       const call = db.calls.find(c => c.name === 'manage-users' && c.args.store_id === created.id);
-      // Sem senha no pedido: o servidor aplica a provisória padrão 12345678 (contrato do Backend).
-      expect(call?.args.password).toBeUndefined();
+      expect(call?.args.password).toBe('12345678');
       expect(call?.args.role).toBe('OWNER');
     }
   });

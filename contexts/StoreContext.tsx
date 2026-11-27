@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import { AppView } from '../types';
 import { applyBrandColor, normalizeHex } from '../lib/brand';
+import { canImpersonate, effectiveImpersonation } from '../lib/privacy';
 import {
   StoreMember,
   createStoreMember,
@@ -96,7 +97,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [stores, setStores] = useState<StoreSummary[]>([]);
   const [activeStoreId, setActiveStoreId] = useState<string | null>(null);
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
-  const [impersonatedStore, setImpersonatedStore] = useState<StoreSummary | null>(() => {
+  const [storedImpersonation, setImpersonatedStore] = useState<StoreSummary | null>(() => {
     if (typeof window === 'undefined') return null;
     const saved = sessionStorage.getItem('GESTAO_PRO_IMPERSONATED_STORE');
     if (saved) {
@@ -234,6 +235,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     reload();
   }, [reload]);
 
+  // Valor salvo no navegador só vale para o dono do SaaS (decisão 36).
+  const impersonatedStore = effectiveImpersonation(storedImpersonation, isPlatformAdmin);
+
   const activeStore = useMemo(() => stores.find(s => s.id === activeStoreId) || null, [stores, activeStoreId]);
   const role = activeStore?.role ?? null;
   const isManager = role === 'OWNER' || role === 'MANAGER';
@@ -322,7 +326,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [legacyMode, activeStoreId]);
 
   const startImpersonation = useCallback(async (storeId: string, storeName?: string) => {
-    if (!isPlatformAdmin) throw new Error('Só o administrador da plataforma abre outra loja.');
+    if (!canImpersonate(isPlatformAdmin)) throw new Error('Só o administrador da plataforma abre outra loja.');
     await switchStore(storeId);
     const known = stores.find(s => s.id === storeId);
     const target: StoreSummary = known

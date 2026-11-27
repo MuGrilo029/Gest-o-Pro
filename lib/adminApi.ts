@@ -148,12 +148,13 @@ export const createStore = async (input: CreateStoreInput): Promise<CreateStoreR
   const storeId = row?.store_id as string;
   if (!storeId) throw new Error('O banco não devolveu a loja criada.');
   if (row.account_exists) return { storeId, accountCreated: false, temporaryPassword: null };
-  // Sem senha: o manage-users usa a provisória 12345678 quando quem chama é o admin (contrato do Backend).
+  // Senha provisória 12345678 enviada explicitamente (decisão 40); o servidor aplica a mesma se faltar.
   const created = await callManageUsers({
     action: 'create_member',
     store_id: storeId,
     email: input.email.trim(),
     name: input.ownerName.trim() || input.storeName.trim(),
+    password: DEFAULT_TEMP_PASSWORD,
     role: 'OWNER',
     permissions: [],
   });

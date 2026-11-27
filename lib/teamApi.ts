@@ -91,12 +91,7 @@ export const removeStoreMember = async (storeId: string, userId: string) => {
   if (error) throw new Error(friendlyTeamError(error.message));
 };
 
-/** Mascara o e-mail para quem não é admin da plataforma (ex.: j***@dominio.com). */
-export const maskEmail = (email: string): string => {
-  const at = email.indexOf('@');
-  if (at <= 0) return '***';
-  return `${email[0]}***${email.slice(at)}`;
-};
+export { maskEmail } from './privacy';
 
 /** Quantos vendedores a loja tem (o limite do plano conta só o papel SELLER). */
 export const countSellers = (members: StoreMember[]) => members.filter(m => m.role === 'SELLER').length;

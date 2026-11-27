@@ -1122,9 +1122,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const pItems = s.items.map(i => {
-      const productExists = !!i.productId && data.products.some((p: Product) => p.id === i.productId);
+      // Item avulso não tem produto; produto do catálogo vai sempre com o id e o servidor confere a loja.
       return {
-        product_id: productExists ? i.productId : null,
+        product_id: i.productId || null,
         product_name: i.productName || 'Item sem nome',
         description: i.description,
         quantity: i.quantity || 1,

@@ -45,8 +45,9 @@ export const Login: React.FC = () => {
       // Aceite dos Termos feito no cadastro, gravado agora que há sessão e loja (decisão 47).
       const pendingTerms = localStorage.getItem(PENDING_TERMS_KEY);
       if (pendingTerms) {
-        await recordTermsAcceptance(pendingTerms);
-        localStorage.removeItem(PENDING_TERMS_KEY);
+        // Só sai da fila quando o banco confirma; falha não impede o login (tenta de novo no próximo).
+        const saved = await recordTermsAcceptance(pendingTerms).catch(() => false);
+        if (saved) localStorage.removeItem(PENDING_TERMS_KEY);
       }
 
       if (pendingStore) window.location.reload();

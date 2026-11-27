@@ -80,10 +80,13 @@ export const SelfSignup: React.FC<SelfSignupProps> = ({ onBack }) => {
         // Com sessão ativa, a RPC cria a loja e o dono com 1 hora de teste.
         const { error: rpcError } = await supabase.rpc('start_self_trial', { p_name: storeName });
         if (rpcError) throw new Error(rpcError.message);
-        // Aceite dos Termos gravado no banco depois da loja (a RPC registra a loja ativa; decisão 47).
-        await recordTermsAcceptance(TERMS_VERSION);
         localStorage.removeItem(PENDING_TRIAL_KEY);
-        localStorage.removeItem(PENDING_TERMS_KEY);
+        // Aceite dos Termos gravado depois da loja (a RPC registra a loja ativa; decisão 47).
+        // A loja já existe: se o registro falhar ou a RPC ainda não existir, fica pendente e o
+        // Login grava no próximo acesso (repetir o cadastro cairia em "e-mail já tem conta").
+        const saved = await recordTermsAcceptance(TERMS_VERSION).catch(() => false);
+        if (saved) localStorage.removeItem(PENDING_TERMS_KEY);
+        else localStorage.setItem(PENDING_TERMS_KEY, TERMS_VERSION);
         window.location.reload();
         return;
       }
