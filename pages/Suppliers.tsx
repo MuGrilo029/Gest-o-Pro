@@ -5,6 +5,7 @@ import { Card, Button, Input, Select, Table, Modal, formatCpfCnpj, formatPhone }
 import { Plus, Trash2, Search, Phone, MapPin, Building2, Tag, Edit } from 'lucide-react';
 import { Supplier } from '../types';
 import { getUUID } from '../lib/utils';
+import { ManagerOnly } from '../components/ManagerOnly';
 
 export const Suppliers: React.FC = () => {
     const { suppliers, categories, addSupplier, updateSupplier, deleteSupplier } = useAppStore();
@@ -133,9 +134,11 @@ export const Suppliers: React.FC = () => {
 
                     <div className="md:col-span-2 flex justify-between items-center mt-4 pt-4 border-t border-wine-100 dark:border-slate-700">
                         {formData.id && (
+                            <ManagerOnly>
                             <Button type="button" variant="danger" onClick={() => setShowDeleteConfirm(true)}>
                                 <Trash2 size={18} /> Excluir
                             </Button>
+                            </ManagerOnly>
                         )}
                         <div className="flex gap-2 ml-auto">
                             <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>

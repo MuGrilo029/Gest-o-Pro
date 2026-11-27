@@ -5,6 +5,7 @@ import { Card, Button, Modal, Input, Badge, confirmDialog } from '../components/
 import { Truck, MapPin, Phone, Clock, Calendar, CheckCircle, Navigation, Edit2, MessageCircle, Printer, FileText, Trash2, Kanban, RotateCcw } from 'lucide-react';
 import { Delivery } from '../types';
 import { formatISO, formatCurrency } from '../lib/utils';
+import { ManagerOnly } from '../components/ManagerOnly';
 
 const getWhatsAppLink = (notes?: string) => {
   const phoneMatch = notes?.match(/\(\d{2}\)\s\d{4,5}-\d{4}/);
@@ -227,6 +228,7 @@ const DeliveryCard: React.FC<{ delivery: Delivery; onEdit: (d: Delivery) => void
           >
             <Edit2 size={18} />
           </button>
+          <ManagerOnly>
           <button
             onClick={async () => {
               if (await confirmDialog('Deseja excluir esta entrega?')) {
@@ -238,6 +240,7 @@ const DeliveryCard: React.FC<{ delivery: Delivery; onEdit: (d: Delivery) => void
           >
             <Trash2 size={18} />
           </button>
+          </ManagerOnly>
           {delivery.status === 'IN_ROUTE' && (
             <button
               onClick={() => onPrint(delivery)}

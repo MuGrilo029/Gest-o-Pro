@@ -26,6 +26,7 @@ import {
 import { Sale, SaleItem, Product } from '../types';
 import { parseISO, isInRange as utilsIsInRange } from '../lib/utils';
 import { SalePrintTemplate } from '../components/SalePrintTemplate';
+import { ManagerOnly } from '../components/ManagerOnly';
 
 
 export const SalesHistory: React.FC = () => {
@@ -274,6 +275,7 @@ export const SalesHistory: React.FC = () => {
                                             >
                                                 <Printer size={16} />
                                             </button>
+                                            <ManagerOnly>
                                             <button
                                                 onClick={() => setShowDeleteModal(sale.id)}
                                                 className="p-2 hover:bg-red-100 dark:hover:bg-slate-600 rounded-lg text-red-600 transition-colors"
@@ -281,6 +283,7 @@ export const SalesHistory: React.FC = () => {
                                             >
                                                 <Trash2 size={16} />
                                             </button>
+                                            </ManagerOnly>
                                         </div>
                                     </td>
                                 </tr>
