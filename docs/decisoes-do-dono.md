@@ -94,15 +94,17 @@ Migrações são escritas e testadas só em banco de teste/local.
 
 Seguem pendentes: duração do trial, MFA, SSO e +tag, e-mail de colegas, dados de demonstração, imagens (público ou link), CMV, domínio, razão social, CNPJ, número do WhatsApp.
 
-## Estado da execução (27/11/2026, integração final)
-- **Integrado em `preparacao-lancamento` (local, sem push):** `feat/backend-lancamento` (até 4a9b384), `feat/frontend-lancamento` (até ad5316e) e `feat/seguranca-lancamento` (até cd28958). Tudo revisado: migrações 048–063 aprovadas por S; front revisado por E1/E2.
+## Estado da execução (27/11/2026, após publicação)
+- **Publicado:** backend (até 4a9b384), frontend (até ad5316e) e segurança (até cd28958) integrados e mesclados na `main` (95e9669), que é a versão em produção. Migrações 048–063 aprovadas por S; front revisado por E1/E2.
 - **Correções no banco (048–063):** A3 imagens por loja, A5 `search_path`, A9/A11 vendedor não apaga pela API, 028 refeita como 057. A13 fechado: 059 (vendedor só vende por `create_sale`, trigger impede mudar valores da venda), 060 (`create_sale` recalcula total/entrada/restante/taxa; loja sem `card_fees` só aceita taxa 0 — decisão técnica do SD, o dono pode rever), 061 (CHECK de valores finitos), 062 (`card_fees.percentage` 0–100). 063: `delete_sale` transacional, só dono/gerente; DELETE direto em `sales` removido.
 - **Front:** `addSale` → `create_sale`, `deleteSale` → `delete_sale`, validação de valores antes da RPC, QR/link fixo do Google removido, fontes locais. CSP final sem origens de terceiros (só self, Supabase e vercel.live).
 - **Testes na integração (SD):** tsc ok; build ok; Vitest 180/180 (inclui RLS e riscos no PGlite); replay duplo das migrações ok até a 063; Playwright E2E no modo mock 21/21. **Não testado:** E2E contra banco real (não há banco de teste gravável); venda no cartão pelo PDV mobile no E2E.
 - **Ordem para aplicar no banco:** 047b, 048…063. 059–061 e 063 só junto com o deploy deste front; com o front antigo o vendedor não vende e a exclusão de venda falha no meio. Antes, snapshot de `sales`, `sale_items`, `transactions`, `card_fees`, `products`, `stock_movements`, `deliveries`, `orders`, `production_orders` e das tabelas de planos/lojas tocadas em 048–052.
-- **Banco `supabase-dev`:** nada aplicado. Requer aprovação do dono.
+- **Banco `supabase-dev`:** 047b e 048–063 aplicadas em 27/11 com aprovação do dono (snapshot no schema `snapshot_20261127`; ver `database/migrations/APLICADAS.md`).
 - **Fora do lançamento:** pagamento manual no painel (cobrança adiada); link de avaliação como campo da loja; anexos de OS órfãos após excluir venda (A14, retenção LGPD).
-- **Bloqueado pelo dono:** limite de desconto do vendedor e preço de tabela (D4), teto de valor por venda, e-mail completo dos colegas na equipe (decisão 32), `TERMS_URL` e número do WhatsApp, além das perguntas pendentes acima.
+- **Decisões novas (27/11):** limite de desconto do vendedor **aprovado** (por loja, definido pelo dono da loja, padrão 10%, conferido no `create_sale`; migração 064 em implementação e revisão, **não aplicada**). Preço de tabela obrigatório e teto de valor por venda **reprovados**. Taxa sem `card_fees` = só 0, **confirmada**.
+- **Aberto (D4):** sem preço de tabela, o vendedor contorna o limite baixando o preço unitário ou usando Item Avulso. Aguarda decisão do dono.
+- **Bloqueado pelo dono:** e-mail completo dos colegas na equipe (decisão 32), `TERMS_URL` e número do WhatsApp, além das perguntas pendentes acima.
 
 ## Riscos registrados por Segurança (sem mudar a decisão)
 - Senha de 8 caracteres sem números.
