@@ -14,11 +14,11 @@ Migrações são escritas e testadas só em banco de teste/local.
 
 | Nº | Decisão do dono | Ação | Resp. | Estado |
 |---|---|---|---|---|
-| 1 | Início R$49 (1 vendedor), Crescimento R$99 (3), Avançado R$199 (6). Cobrança por loja. Anual = 10 meses. | `lib/plans.ts` e `plan_modules`/`plans` no banco: Avançado `maxSellers = 6` (hoje `null` = ilimitado); preço anual = 10× mensal. **Confirmar com o dono: Avançado = 6 (antes estava "ilimitado").** | B, F | a fazer |
+| 1 | Início R$49 (1 vendedor), Crescimento R$99 (3), Avançado R$199 (6). Cobrança por loja. Anual = 10 meses. | `lib/plans.ts` e `plan_modules`/`plans` no banco: Avançado `maxSellers = 6` (hoje `null` = ilimitado; **6 confirmado pelo dono**); preço anual = 10× mensal. | B, F | a fazer |
 | 2 | "Com Stillo" é legado/teste. | Remover o plano custom do fluxo (telas, seletor, RPC). Não tocar os dados da loja `com-stillo-moveis`. | B, F | a fazer |
 | 3 | Duração do trial (1h, 3h ou 7–14 dias), se dá acesso ao Avançado e se há plano gratuito: **sem resposta**. | Manter o comportamento atual (1h no cadastro, 3h no admin) até decidir. | Dono | bloqueado pelo dono |
 | 4 | Excesso de vendedores bloqueia. No downgrade, avisa e obriga excluir vendedores. | RPC/trigger bloqueia criar vendedor acima do limite; troca para plano menor exige excluir excedentes antes (tela de aviso + validação no banco). | B, F | a fazer |
-| 5–12 | Cobrança (Asaas, upgrade pró-rata, reembolso, cancelamento, assinatura vencida, MRR, NF da assinatura): **não estão no arquivo**. | Nada de cobrança é fechado. Checkout Asaas segue desligado. | Dono | bloqueado pelo dono |
+| 5–12 | Cobrança (Asaas, upgrade pró-rata, reembolso, cancelamento, assinatura vencida, MRR, NF da assinatura): **adiada pelo dono**. | Não implementar nada de cobrança nesta entrega. Checkout Asaas segue desligado; itens que dependem de cobrança ficam adiados. | Dono | adiado pelo dono |
 | 13 | Entram: vendas/PDV, estoque, clientes, financeiro, fornecedores, orçamentos, produção sob medida, entregas, encomendas, boletos, relatórios, comissão de vendedor. Fora: m–t. | Conferir que os 12 módulos funcionam ponta a ponta; esconder/remover qualquer resto de m–t. | F, B | a fazer |
 | 14 | Core sempre ligados: Dashboard, Vendas, Clientes, Estoque, Configurações. | Core não pode ser desligado por plano nem por override (banco e front). | B, F | a fazer |
 | 15 | Boletos, Fornecedores e Encomendas entram a partir do Crescimento. | Adicionar `boletos`, `suppliers`, `orders` ao Crescimento e Avançado em `plan_modules` e `lib/plans.ts`. | B, F | a fazer |
@@ -40,10 +40,10 @@ Migrações são escritas e testadas só em banco de teste/local.
 | 30 | Loja criada pelo cadastro com trial e também pelo admin. | Manter os dois caminhos, ambos pela mesma RPC de criação. | B, F | a fazer |
 | 31 | Papéis dono/gerente/vendedor: Produto monta a matriz; dono aprova. | Matriz de telas × permissões em `docs/matriz-papeis.md`; implementar só após aprovação. | P → Dono | a fazer |
 | 32 | E-mail de colegas visível para vendedor: **sem resposta**. | Manter o mascaramento atual; corrigir só vazamentos já mascarados na tela (aria-labels). | Dono | bloqueado pelo dono |
-| 33 | Painel admin: acessam o dono e o suporte (conta pelo e-mail do trial ou manual). **Conflito com a definição anterior "só o dono" — confirmar.** | Papel de plataforma "suporte" além do dono; acesso pelo flag de plataforma. | B, S | a fazer |
+| 33 | Painel admin: **APENAS o dono do SaaS acessa** (decisão final, substitui "dono e suporte"). | Sem papel de suporte. Acesso só por `is_platform_admin` (uma conta). Remover qualquer papel/conta de suporte do código, RLS, UI e testes; teste garante que não-admin não acessa. | B, F, S | a fazer |
 | 34 | Ações: criar loja (trial ou paga), estender, suspender, encerrar, trocar plano, override, pagamento manual, gerenciar equipe. | RPCs admin para cada ação + telas do painel novo. | B, F | a fazer |
-| 35 | Tela de admin só com assinaturas, mas pode ver dados da loja para suporte. | Painel lista assinaturas; leitura da loja via impersonação/visualização. Sem tela de vendas/financeiro no painel. | F | a fazer |
-| 36 | Impersonação: sim, sem limite de tempo e sem log. | Manter impersonação sem expirar; não registrar log (o log de fim proposto foi retirado). Risco registrado por S. | F, S | a fazer |
+| 35 | Tela de admin só com assinaturas. A "leitura da loja para suporte" no painel **saiu**. | Painel lista assinaturas e ações; sem tela de leitura de dados da loja nem de vendas/financeiro. | F | a fazer |
+| 36 | Impersonação: sim, só pelo dono do SaaS, sem limite de tempo e sem log. | Manter impersonação sem expirar, restrita a `is_platform_admin`; não registrar log (o log de fim proposto foi retirado). Risco registrado por S. | F, S | a fazer |
 | 37 | Ações de risco sem motivo e sem aprovação em 2 etapas. | Tirar `MotivoDialog` das ações do admin. | F | a fazer |
 | 38 | Sem KPIs no painel. | Remover cards de MRR/churn/totais do painel. | F | a fazer |
 | 39 | Auditoria 5 anos é decisão interna; sem exportação. | Manter retenção; nenhuma tela de exportação. | — | pronto |
@@ -55,7 +55,7 @@ Migrações são escritas e testadas só em banco de teste/local.
 | 45 | Normalização de e-mail (+tag) e SSO: **sem resposta**. | Nada implementado. | Dono | bloqueado pelo dono |
 | 46a | Cada loja vê só as suas imagens de produto. | RLS de Storage do bucket `products` por loja (leitura e escrita). | B, S | a fazer |
 | 46b | Bucket público ou link temporário: **sem resposta**. | Implementar a 46a de forma compatível com as duas opções (caminho por `store_id`). | Dono | bloqueado pelo dono |
-| 47 | Produto redige Termos e Política; dono revisa; nada publicado. Aceite guardado no banco. | Rascunho em `docs/legal/`; tabela de aceite (usuário, versão, data) + registro no cadastro. | P, B, F | a fazer |
+| 47 | Produto redige Termos e Política; rascunho aprovado pelo dono quando entregue; **publicação pendente, fora desta entrega**. Aceite guardado no banco. | Rascunho em `docs/legal/`; tabela de aceite (usuário, versão, data) + registro no cadastro. | P, B, F | a fazer |
 | 48 | Exportação/anonimização LGPD não é exigida antes do lançamento. | Fora do lançamento; risco registrado por S. | S | pronto |
 | 49 | Trial não convertido guarda só o login do dono; o resto é apagado. | Rotina que apaga dados da loja de trial vencido e mantém a conta do dono. **Escrita e testada só em banco de teste; execução real precisa de aprovação.** | B | a fazer |
 | 50 | Sem contrato DPA. | Nada a fazer. | — | pronto |
@@ -86,9 +86,13 @@ Migrações são escritas e testadas só em banco de teste/local.
 | T7 Módulos 02/06/08/12/13/14/16; recuperação de senha; templates de notificação; latência/multi-região | Recuperação de senha pelo Auth do Supabase; templates em pt-BR; sem multi-região. | Conferir recuperação de senha no E2E. | B, F | a fazer |
 | T8 Observabilidade, rate limit, WAF; RPC ou REST | Rate limit nas Edge Functions feito (memória). Front usa RPC para escrita sensível. Logs do Supabase/Vercel bastam. | — | B | pronto (rate limit) |
 
-## Pontos para confirmação do dono (registrados, implementados conforme a resposta atual)
-1. Avançado com 6 vendedores (antes "ilimitado").
-2. Painel admin acessado por dono **e suporte** (antes "só o dono").
+## Confirmações do dono (atualização 27/11/2026)
+1. Avançado com 6 vendedores: **confirmado**.
+2. Painel admin: **apenas o dono** (sem suporte, sem leitura de loja para suporte).
+3. Termos: rascunho aprovado quando entregue; publicação pendente.
+4. Cobrança (5–12): adiada.
+
+Seguem pendentes: duração do trial, MFA, SSO e +tag, e-mail de colegas, dados de demonstração, imagens (público ou link), CMV, domínio, razão social, CNPJ, número do WhatsApp.
 
 ## Riscos registrados por Segurança (sem mudar a decisão)
 - Senha de 8 caracteres sem números.
@@ -99,7 +103,7 @@ Migrações são escritas e testadas só em banco de teste/local.
 
 ## Ordem de execução
 1. **Fase 0 (feito):** branch `preparacao-lancamento`, baseline de segurança, este documento, landing separada.
-2. **Fase 1 — banco (B, revisão E1):** planos 1/3/6, módulos por plano (15/16), core fixo (14), override sem motivo/validade (17), limite e downgrade (4), uma loja por dono (29), senha 8 (42), senha provisória (40), papel suporte (33), RLS de imagens (46a), aceite dos Termos (47), limpeza de trial (49, só teste). Migrações novas a partir de 048, testadas só em banco de teste.
+2. **Fase 1 — banco (B, revisão E1):** planos 1/3/6, módulos por plano (15/16), core fixo (14), override sem motivo/validade (17), limite e downgrade (4), uma loja por dono (29), senha 8 (42), senha provisória (40), painel só do dono — sem papel suporte (33), RLS de imagens (46a), aceite dos Termos (47), limpeza de trial (49, só teste). Migrações novas a partir de 048, testadas só em banco de teste.
 3. **Fase 2 — front (F, revisão E2):** remover XLSX import (22), Com Stillo (2), Turnstile (44); painel admin refeito (34/35/37/38/41); downgrade com exclusão de vendedores (4); telas de senha; aceite dos Termos; ordem mobile (24).
 4. **Fase 3 — push e regras de negócio (B):** push só para o dono (28); sob medida gera OS/entrega/financeiro (19); depósitos (20a).
 5. **Fase 4 — produto (P, em paralelo desde já):** matriz de papéis (31) e rascunho de Termos/Política (47).
