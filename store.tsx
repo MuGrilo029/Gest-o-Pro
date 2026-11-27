@@ -1079,33 +1079,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addNotification(`Entrada de ${quantity} unidades${selectedVariant ? ` da variação ${selectedVariant.name}` : ''} registrada com sucesso`, 'success');
   };
 
+  /**
+   * Venda nova numa única transação no banco (RPC create_sale, migração 059 do Backend).
+   * O servidor faz estoque, encomendas, OS, entregas e lançamentos conforme os módulos ligados;
+   * o front não repete nada disso. Vale para todos os papéis (o vendedor não tem mais INSERT direto).
+   */
   const addSale = async (s: Sale) => {
     if (!s.items || s.items.length === 0) {
       addNotification('Erro: Não é possível salvar uma venda sem itens.', 'error');
       return false;
     }
 
-    // Módulos ligados nesta loja. Cada automação abaixo só roda se o módulo
-    // dela estiver ligado; a venda em si nunca depende deles.
-    const useOrders = isModuleEnabled('orders');
-    const useFinancial = isModuleEnabled('financial');
-    const useProduction = isModuleEnabled('production');
-    const useDeliveries = isModuleEnabled('deliveries');
-
     // Sem o módulo de Entregas, toda venda é retirada na loja.
-    if (!useDeliveries && s.deliveryType === 'DELIVERY') {
+    if (!isModuleEnabled('deliveries') && s.deliveryType === 'DELIVERY') {
       s = { ...s, deliveryType: 'PICKUP' };
     }
 
     setData((prev: any) => ({ ...prev, sales: [...prev.sales, s] }));
 
-    // 1. Insert Sales Record
-    const { error } = await supabase.from('sales').insert({
+    const pSale = {
       id: s.id,
       customer_name: s.customerName,
       customer_phone: s.customerPhone,
       customer_address: s.customerAddress,
       delivery_type: s.deliveryType,
+      delivery_date: s.deliveryDate || null,
       date: s.date,
       total: s.total,
       discount: s.discount,
@@ -1115,264 +1113,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       payment_type: s.paymentType,
       down_payment: s.downPayment,
       remaining_amount: s.remainingAmount,
+      remaining_status: s.remainingStatus,
       status: s.status,
       observations: s.observations,
-      delivery_date: s.deliveryDate || null,
       card_fee_amount: s.cardFeeAmount || 0,
       card_fee_percentage: s.cardFeePercentage || 0,
-      card_installments: s.cardInstallments || 0
+      card_installments: s.cardInstallments || 0,
+    };
+
+    const pItems = s.items.map(i => {
+      const productExists = !!i.productId && data.products.some((p: Product) => p.id === i.productId);
+      return {
+        product_id: productExists ? i.productId : null,
+        product_name: i.productName || 'Item sem nome',
+        description: i.description,
+        quantity: i.quantity || 1,
+        unit_price: i.unitPrice || 0,
+        category: i.category || 'Geral',
+        service_type: i.serviceType,
+        service_specs: typeof i.serviceSpecs === 'object' ? JSON.stringify(i.serviceSpecs) : i.serviceSpecs,
+        color: i.color,
+        variant_id: i.variantId || null,
+        variant_name: i.variantName || null,
+        by_order: !!i.byOrder,
+      };
     });
 
+    const { error } = await supabase.rpc('create_sale', { p_sale: pSale, p_items: pItems });
     if (error) {
-      console.error('❌ STORE: Erro ao inserir cabeçalho da venda:', error);
+      console.error('❌ STORE: Erro ao criar venda (create_sale):', error);
       addNotification(`Erro ao criar venda: ${error.message}`, 'error');
-      // Rollback otimista
       setData((prev: any) => ({ ...prev, sales: prev.sales.filter((sale: Sale) => sale.id !== s.id) }));
       return false;
     }
 
-    if (!error) {
-      // 2. PREPARE ITEMS & STOCK LOGIC
-      // We process items first to determine their final state (byOrder or not)
-      const processedItems = [];
-      // Estado de estoque da própria venda: duas linhas do mesmo produto não podem sobrescrever uma à outra
-      const stockWorking = new Map<string, Product>();
-
-      for (const item of s.items) {
-        // Clone item to avoid mutation issues
-        const processingItem = { ...item };
-
-        if (processingItem.category !== 'Serviços' && processingItem.serviceType !== 'INTERNAL') {
-          const product = stockWorking.get(processingItem.productId) ?? data.products.find((p: Product) => p.id === processingItem.productId);
-
-          if (product) {
-            // 2A. Auto-detect "Encomenda" if stock is 0 or less
-            // FORCE byOrder to true if stock is insufficient
-            // Sem o módulo de Encomendas, o item sai do estoque normalmente.
-            if (!useOrders) {
-              processingItem.byOrder = false;
-            } else if (product.quantity <= 0) {
-              processingItem.byOrder = true;
-            }
-
-            // 2B. Handle Logic based on byOrder status
-            if (processingItem.byOrder) {
-              // Create Order
-              const newOrder: Order = {
-                id: getUUID(),
-                saleId: s.id,
-                productId: processingItem.productId,
-                customerName: s.customerName,
-                productName: processingItem.productName,
-                quantity: processingItem.quantity,
-                date: s.date,
-                status: 'PENDING',
-                notes: `Encomenda de Venda #${s.id.slice(0, 4)}`
-              };
-              await addOrder(newOrder);
-            } else {
-              // Reduce Stock
-              const newQty = product.quantity - processingItem.quantity;
-              let updatedVariants = product.variants;
-              if (processingItem.variantId && product.variants && product.variants.length > 0) {
-                updatedVariants = product.variants.map((v: ProductVariant) => {
-                  if (v.id === processingItem.variantId) {
-                    return { ...v, quantity: Math.max(0, v.quantity - processingItem.quantity) };
-                  }
-                  return v;
-                });
-              }
-
-              const updatedProduct: Product = { ...product, quantity: newQty, variants: updatedVariants };
-              stockWorking.set(processingItem.productId, updatedProduct);
-              await updateProduct(updatedProduct);
-
-              addStockMovement({
-                id: getUUID(),
-                productId: processingItem.productId,
-                productName: `${processingItem.productName}${processingItem.variantName ? ` (${processingItem.variantName})` : ''}`,
-                quantity: -processingItem.quantity,
-                type: 'SALE',
-                date: s.date,
-                observations: `Venda #${s.id.slice(0, 4)}`
-              });
-            }
-          }
-        }
-        processedItems.push(processingItem);
-      }
-
-      // 3. Insert Sale Items
-      console.log('📦 STORE: Preparando itens para inserção:', processedItems);
-
-      const itemsToInsert = processedItems.map(i => {
-        const productExists = data.products.some((p: Product) => p.id === i.productId);
-        // Clean log: Only warn if it's NOT a custom item (meaning it should have an ID but doesn't)
-        if (!i.productId && i.category !== 'Personalizado') {
-          console.warn('⚠️ STORE: Item sem productId detectado (pode ser item avulso ou erro):', i.productName);
-        }
-
-        return {
-          sale_id: s.id,
-          product_id: (i.productId && productExists) ? i.productId : null,
-          product_name: i.productName || 'Item sem nome',
-          description: i.description,
-          quantity: i.quantity || 1,
-          unit_price: i.unitPrice || 0,
-          category: i.category || 'Geral',
-          service_type: i.serviceType,
-          service_specs: typeof i.serviceSpecs === 'object' ? JSON.stringify(i.serviceSpecs) : i.serviceSpecs,
-          color: i.color,
-                    variant_id: i.variantId || null,
-                    variant_name: i.variantName || null,
-          by_order: i.byOrder
-        };
-      });
-
-      console.log(`📦 STORE: Enviando ${itemsToInsert.length} itens para o Supabase...`, itemsToInsert);
-      const { data: insertedItems, error: itemsError } = await supabase.from('sale_items').insert(itemsToInsert).select();
-
-      if (itemsError) {
-        console.error('❌ STORE: Erro ao inserir itens da venda:', itemsError);
-        addNotification(`Erro nos itens da venda: ${itemsError.message}`, 'error');
-      } else {
-        console.log('✅ STORE: Itens da venda inseridos com sucesso:', insertedItems);
-        addNotification('Venda finalizada com sucesso', 'success');
-      }
-
-      // 3. FINANCIAL INTEGRATION (Auto-Transactions) — só com o módulo Financeiro
-      if (useFinancial && s.cardFeeAmount && s.cardFeeAmount > 0) {
-        const feeTrans: Transaction = {
-          id: getUUID(),
-          description: `Taxa de Cartão Venda #${s.id.slice(0, 4)}`,
-          amount: s.cardFeeAmount,
-          type: 'EXPENSE',
-          category: 'Taxas e Impostos',
-          date: s.date,
-          dueDate: s.date,
-          status: 'PAID',
-          saleId: s.id,
-          paymentMethod: s.paymentMethod
-        };
-        await addTransaction(feeTrans);
-      }
-
-      if (!useFinancial) {
-        // Sem Financeiro: a venda guarda a forma de pagamento, mas não gera lançamentos.
-      } else if (s.downPayment && s.downPayment > 0) {
-        const downTrans: Transaction = {
-          id: getUUID(),
-          description: `Entrada Venda #${s.id.slice(0, 4)} - ${s.customerName}`,
-          amount: s.downPayment,
-          type: 'INCOME',
-          category: 'Vendas',
-          date: s.date,
-          dueDate: s.date,
-          status: 'PAID',
-          saleId: s.id,
-          paymentMethod: s.downPaymentMethod || s.paymentMethod
-        };
-        await addTransaction(downTrans);
-      } else if (s.paymentType === 'FULL') {
-        const fullTrans: Transaction = {
-          id: getUUID(),
-          description: `Venda #${s.id.slice(0, 4)} - ${s.customerName}`,
-          amount: s.total,
-          type: 'INCOME',
-          category: 'Vendas',
-          date: s.date,
-          dueDate: s.date,
-          status: 'PAID',
-          saleId: s.id,
-          paymentMethod: s.paymentMethod
-        };
-        await addTransaction(fullTrans);
-      }
-
-      if (useFinancial && s.paymentType === 'PARTIAL' && s.remainingAmount && s.remainingAmount > 0) {
-        const status = s.remainingStatus === 'PAID' ? 'PAID' : 'PENDING';
-        const remTrans: Transaction = {
-          id: getUUID(),
-          description: `Restante Venda #${s.id.slice(0, 4)} - ${s.customerName}`,
-          amount: s.remainingAmount,
-          type: 'INCOME',
-          category: 'Vendas',
-          date: s.date,
-          dueDate: s.deliveryDate || s.date,
-          status: status,
-          saleId: s.id,
-          paymentMethod: s.remainingPaymentMethod || s.paymentMethod
-        };
-        await addTransaction(remTrans);
-      }
-
-
-
-      // --- NEW LOGIC: Create Delivery or Production Order ---
-      let hasProduction = false;
-
-      // Sem o módulo de Produção, serviços não geram OS e seguem como itens prontos.
-      const goesToProduction = (i: SaleItem) =>
-        useProduction && (i.category === 'Serviços' || i.serviceType === 'INTERNAL');
-
-      for (const item of s.items) {
-        if (goesToProduction(item)) {
-          hasProduction = true;
-          // Create Production Order
-          const prodOrder: ProductionOrder = {
-            id: getUUID(),
-            saleId: s.id,
-            customerName: s.customerName,
-            customerPhone: s.customerPhone,
-            customerAddress: s.customerAddress,
-            itemName: item.productName,
-            specs: item.serviceSpecs || '',
-            quantity: item.quantity,
-            date: formatISO(new Date()),
-            status: 'PENDING'
-          };
-          await addProductionOrder(prodOrder);
-        }
-      }
-
-      // If it's a delivery sale, create delivery ONLY for items that are ready (In Stock)
-      // Services go to Production -> Delivery (on Complete)
-      // Out of Stock go to Orders -> Delivery (on Receive)
-      if (useDeliveries && s.deliveryType === 'DELIVERY') {
-        const readyItems = processedItems.filter(i => {
-          const isService = goesToProduction(i);
-          const isMsg = i.byOrder; // If it was marked as byOrder, it's not ready
-          return !isService && !isMsg;
-        });
-
-        if (readyItems.length > 0) {
-          // Formata detalhes APENAS dos itens prontos
-          const itemDetails = readyItems.map(i => {
-            let line = `${i.quantity}x ${i.productName}`;
-            if (i.serviceSpecs) {
-              const readable = formatSpecsForDelivery(i.serviceSpecs);
-              line += `\n   » ${readable}`;
-            }
-            return line;
-          }).join('\n');
-
-          const delivery: Delivery = {
-            id: getUUID(),
-            customerName: s.customerName,
-            address: s.customerAddress || 'Endereço não informado',
-            date: s.deliveryDate || s.date,
-            status: 'PENDING',
-            saleId: s.id,
-            notes: `${itemDetails}`,
-            origin: 'SALES'
-          };
-          await addDelivery(delivery);
-        }
-      }
-
-      return true;
-    }
-    return false;
+    addNotification('Venda finalizada com sucesso', 'success');
+    // Estoque, encomendas, OS, entregas e lançamentos foram gerados no servidor: recarrega sem tela de carga.
+    await refreshData(true);
+    return true;
   };
 
   const updateSale = async (s: Sale) => {

@@ -236,6 +236,30 @@ const RPC: Record<string, RpcHandler> = {
     db.overrides = db.overrides.filter(o => !(o.storeId === a.p_store && o.module === a.p_module));
     return { body: null };
   },
+  // create_sale (migração 059): venda, itens, baixa de estoque e lançamento numa chamada só.
+  create_sale: (a, db) => {
+    const sale = { id: a.p_sale?.id || uuid(), ...a.p_sale };
+    const items: Row[] = a.p_items || [];
+    if (!items.length) return { status: 400, body: { code: 'P0001', message: 'Não é possível salvar uma venda sem itens.' } };
+    db.table('sales').push(sale);
+    let movimentos = 0;
+    for (const it of items) {
+      db.table('sale_items').push({ id: uuid(), sale_id: sale.id, ...it });
+      const prod = db.table('products').find(p => p.id === it.product_id);
+      if (prod && !it.by_order && it.category !== 'Serviços') {
+        prod.quantity = Number(prod.quantity) - Number(it.quantity);
+        db.table('stock_movements').push({ id: uuid(), product_id: prod.id, quantity: -Number(it.quantity), type: 'SALE', date: sale.date });
+        movimentos += 1;
+      }
+    }
+    const store = db.stores.find(st => st.id === db.activeStore[db.currentUserId!]);
+    let lancamentos = 0;
+    if (store && db.moduleEnabled(store.id, 'financial') && sale.payment_type === 'FULL') {
+      db.table('transactions').push({ id: uuid(), description: `Venda #${String(sale.id).slice(0, 4)}`, amount: sale.total, type: 'INCOME', status: 'PAID', date: sale.date, sale_id: sale.id });
+      lancamentos = 1;
+    }
+    return { body: { sale_id: sale.id, itens: items.length, encomendas: 0, ordens_producao: 0, entregas: 0, lancamentos, movimentos_estoque: movimentos } };
+  },
   edit_sale_items: () => ({ body: null }),
   start_self_trial: () => ({ body: null }),
 };

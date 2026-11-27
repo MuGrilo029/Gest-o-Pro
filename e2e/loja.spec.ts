@@ -32,6 +32,7 @@ test.describe('loja', () => {
     await expect(page.getByText(/venda (realizada|registrada|finalizada|concluída)/i).first()).toBeVisible();
     if (db) {
       await expect.poll(() => db.table('sales').length).toBe(1);
+      expect(db.calls.some(c => c.name === 'create_sale')).toBe(true);
       const sales = db.table('sales');
       expect(Number(sales[0].total)).toBe(1500);
       expect(db.table('sale_items')).toHaveLength(1);
