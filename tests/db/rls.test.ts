@@ -247,8 +247,12 @@ describe('um dono = uma loja e criação pelo admin (050)', () => {
 
   it('loja paga sem plano é recusada; trial sem plano usa os módulos do trial', async () => {
     expect(await t.fails(admin, `SELECT * FROM admin_create_client('z1@teste.local', 'Z', NULL, 'paid')`)).toMatch(/precisa do plano/);
+    // 067: e-mail sem login é recusado (o painel cria o login antes, pela manage-users).
+    expect(await t.fails(admin, `SELECT * FROM admin_create_client('z2@teste.local', 'Z2')`)).toMatch(/CONTA_INEXISTENTE/);
+    expect(await t.sql(`SELECT id FROM stores WHERE name = 'Z2'`)).toHaveLength(0);
+    await t.createUser('z2@teste.local');
     const [{ store_id, account_exists }] = await t.as(admin, `SELECT * FROM admin_create_client('z2@teste.local', 'Z2')`);
-    expect(account_exists).toBe(false);
+    expect(account_exists).toBe(true);
     const [{ status }] = await t.sql(`SELECT status FROM stores WHERE id = $1`, [store_id]);
     expect(status).toBe('trial');
   });
@@ -267,6 +271,7 @@ describe('um dono = uma loja e criação pelo admin (050)', () => {
   });
 
   it('encerrar loja de contrato manual funciona com a cobrança adiada', async () => {
+    await t.createUser('z3@teste.local');
     const [{ store_id }] = await t.as(admin, `SELECT * FROM admin_create_client('z3@teste.local', 'Z3', NULL, 'paid', NULL, 30, 'inicio')`);
     const [{ r }] = await t.as(admin, `SELECT admin_close_store($1) r`, [store_id]);
     expect(r.status).toBe('expired');
