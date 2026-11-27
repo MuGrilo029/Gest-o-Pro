@@ -35,6 +35,7 @@ import { MobileCartItem } from './types';
 import { Product, Customer, Sale } from '../../types';
 import { getUUID } from '../../lib/utils';
 import { useStore } from '../../contexts/StoreContext';
+import { sellerDiscountProblem } from '../../lib/discount';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -138,7 +139,7 @@ export const MobileSalesPDV: React.FC<MobileSalesPDVProps> = ({
   const [deliveryObservations, setDeliveryObservations] = useState('');
 
   // ── Payment State ────────────────────────────────────────────────────────────
-  const [discount, setDiscount] = useState(0);
+  const [typedDiscount, setDiscount] = useState(0);
   const [discountInput, setDiscountInput] = useState('0');
   const [isPartial, setIsPartial] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodId>('PIX');
@@ -155,7 +156,12 @@ export const MobileSalesPDV: React.FC<MobileSalesPDVProps> = ({
     () => cart.reduce((acc, item) => acc + item.unitPrice * item.quantity, 0),
     [cart]
   );
+  // Se itens saírem do carrinho depois de digitado, o desconto não passa do subtotal.
+  const discount = Math.min(typedDiscount, subtotal);
   const total = useMemo(() => Math.max(0, subtotal - discount), [subtotal, discount]);
+  // Limite do vendedor (D4): avisa e bloqueia antes do envio.
+  const { role, isPlatformAdmin, sellerDiscountLimit } = useStore();
+  const discountProblem = sellerDiscountProblem({ role, isPlatformAdmin, subtotal, discount, limitPercent: sellerDiscountLimit });
   const downPayment = useMemo(() => Math.min(total, parseFloat(downPaymentInput) || 0), [total, downPaymentInput]);
   const remainingAmount = useMemo(() => Math.max(0, total - downPayment), [total, downPayment]);
   const totalItemsCount = useMemo(
@@ -261,7 +267,7 @@ export const MobileSalesPDV: React.FC<MobileSalesPDVProps> = ({
 
   // ── Finish Sale ───────────────────────────────────────────────────────────
   const handleFinishSale = async () => {
-    if (cart.length === 0 || isSavingSale) return;
+    if (cart.length === 0 || isSavingSale || discountProblem) return;
     setIsSavingSale(true);
 
     const saleData: any = {
@@ -827,6 +833,11 @@ export const MobileSalesPDV: React.FC<MobileSalesPDVProps> = ({
               max={subtotal}
               className="w-full px-3.5 py-2.5 rounded-xl bg-[#111827] border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
             />
+            {discountProblem && (
+              <p role="alert" data-testid="discount-limit" className="text-[11px] font-bold text-amber-300 bg-amber-950/50 border border-amber-500/40 rounded-xl px-3 py-2">
+                {discountProblem}
+              </p>
+            )}
             {discount > 0 && (
               <div className="flex justify-between text-[11px] px-1">
                 <span className="text-slate-400">Total com desconto:</span>
@@ -1045,7 +1056,8 @@ export const MobileSalesPDV: React.FC<MobileSalesPDVProps> = ({
           {/* Next Button */}
           <button
             onClick={() => setCheckoutStep('REVIEW')}
-            className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-red-900 via-wine-900 to-rose-900 hover:from-red-800 hover:to-rose-800 text-white font-extrabold text-sm shadow-xl shadow-red-950/60 active:scale-95 transition-all flex items-center justify-center gap-2 mt-1"
+            disabled={!!discountProblem}
+            className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-red-900 via-wine-900 to-rose-900 hover:from-red-800 hover:to-rose-800 text-white font-extrabold text-sm shadow-xl shadow-red-950/60 active:scale-95 transition-all flex items-center justify-center gap-2 mt-1 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <ArrowRight size={18} />
             Revisar Pedido
@@ -1211,7 +1223,7 @@ export const MobileSalesPDV: React.FC<MobileSalesPDVProps> = ({
           {/* Confirm Button */}
           <button
             onClick={handleFinishSale}
-            disabled={isSavingSale || cart.length === 0}
+            disabled={isSavingSale || cart.length === 0 || !!discountProblem}
             className="w-full py-4 rounded-2xl bg-gradient-to-r from-red-900 via-wine-900 to-rose-900 hover:from-red-800 hover:to-rose-800 text-white font-extrabold text-sm shadow-xl shadow-red-950/60 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSavingSale ? (
