@@ -116,6 +116,9 @@ interface AppState {
 
 const AppContext = createContext<AppState | undefined>(undefined);
 
+/** Arredonda para centavos (o servidor confere valores com tolerância de 1 centavo). */
+const roundMoney = (v: number) => Math.round((Number(v) || 0) * 100) / 100;
+
 const STORAGE_KEY = 'COM_STILLO_DB_V1';
 const THEME_KEY = 'COM_STILLO_THEME';
 
@@ -1095,6 +1098,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       s = { ...s, deliveryType: 'PICKUP' };
     }
 
+    // Valores no formato que o create_sale (060) confere: centavos, desconto entre 0 e o subtotal,
+    // total = subtotal − desconto, à vista sem entrada/restante, dividido com restante = total − entrada.
+    const subtotal = s.items.reduce((acc, i) => acc + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0), 0);
+    const discount = roundMoney(Math.min(Math.max(0, Number(s.discount) || 0), subtotal));
+    const total = roundMoney(Math.max(0, subtotal - discount));
+    const partial = s.paymentType === 'PARTIAL';
+    const downPayment = partial ? roundMoney(Math.min(Math.max(0, Number(s.downPayment) || 0), total)) : 0;
+    s = {
+      ...s,
+      discount,
+      total,
+      downPayment: partial ? downPayment : s.downPayment,
+      remainingAmount: partial ? roundMoney(total - downPayment) : 0,
+      cardFeeAmount: roundMoney(Number(s.cardFeeAmount) || 0),
+    };
+
     setData((prev: any) => ({ ...prev, sales: [...prev.sales, s] }));
 
     const pSale = {
@@ -1110,8 +1129,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       payment_method: s.paymentMethod,
       down_payment_method: s.downPaymentMethod,
       remaining_payment_method: s.remainingPaymentMethod,
-      payment_type: s.paymentType,
-      down_payment: s.downPayment,
+      payment_type: partial ? 'PARTIAL' : 'FULL',
+      down_payment: partial ? downPayment : 0,
       remaining_amount: s.remainingAmount,
       remaining_status: s.remainingStatus,
       status: s.status,
@@ -1154,6 +1173,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateSale = async (s: Sale) => {
+    // Edição de venda é do dono/gerente: edit_sale_items (058) e o gatilho da 059 recusam o vendedor.
+    if (!isManager) {
+      addNotification('Só o dono ou o gerente altera uma venda.', 'error');
+      return false;
+    }
     if (!s.items || s.items.length === 0) {
       addNotification('Erro: Não é possível atualizar uma venda removendo todos os itens.', 'error');
       return false;

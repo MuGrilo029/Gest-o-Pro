@@ -124,12 +124,19 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         status: 'COMPLETED',
         observations: saleData.observations || '',
         deliveryDate: saleData.deliveryDate,
+        // Taxa e parcelas vão junto: o create_sale (060) confere a taxa com a tabela da loja.
+        cardFeeAmount: saleData.cardFeeAmount || 0,
+        cardFeePercentage: saleData.cardFeePercentage,
+        cardInstallments: saleData.cardInstallments || 0,
         items: saleData.items.map((it) => ({
           productId: it.productId,
           productName: it.name,
           quantity: it.quantity,
           unitPrice: it.unitPrice,
-          category: it.category
+          category: it.category,
+          variantId: it.variantId,
+          variantName: it.variantName,
+          color: it.color,
         }))
       };
       const saved = await store.addSale(newSale);

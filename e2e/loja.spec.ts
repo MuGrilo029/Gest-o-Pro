@@ -43,6 +43,29 @@ test.describe('loja', () => {
     }
   });
 
+  test('venda com desconto e cartão de crédito passa na conferência do servidor (060)', async ({ page, db }) => {
+    await goTo(page, 'Vendas / PDV');
+    await page.getByPlaceholder('Buscar produtos...').fill('Mesa E2E');
+    await page.getByRole('heading', { name: 'Mesa E2E' }).click();
+    await page.getByLabel('Desconto (R$)').fill('100');
+    await page.getByLabel('Pagamento', { exact: true }).selectOption('Cartão Crédito');
+    await page.getByLabel('Parcelas').selectOption('3');
+    await page.getByRole('button', { name: /finalizar venda/i }).click();
+    const confirm = page.getByRole('button', { name: /confirmar lançamento|confirmar venda|finalizar/i }).last();
+    if (await confirm.isVisible().catch(() => false)) await confirm.click();
+
+    await expect(page.getByText(/venda (realizada|registrada|finalizada|concluída)/i).first()).toBeVisible();
+    if (db) {
+      await expect.poll(() => db.table('sales').length).toBe(1);
+      const sale = db.table('sales')[0];
+      // 800 − 100 = 700; taxa da linha de 3 parcelas (4%) = 28.
+      expect(Number(sale.total)).toBe(700);
+      expect(Number(sale.discount)).toBe(100);
+      expect(Number(sale.card_fee_amount)).toBe(28);
+      expect(Number(sale.card_installments)).toBe(3);
+    }
+  });
+
   test('entrada de estoque soma a quantidade do produto', async ({ page, db }) => {
     await goTo(page, 'Estoque');
     await page.getByText('Mesa E2E', { exact: true }).first().click();

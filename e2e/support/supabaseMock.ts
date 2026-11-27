@@ -110,6 +110,12 @@ export const seedDefault = (db = new MockDb()) => {
     { id: uuid(), name: 'Sofá E2E 3 lugares', sku: 'E2E-SOF', price: 1500, cost: 700, quantity: 5, min_stock: 1, category: 'Sofás' },
     { id: uuid(), name: 'Mesa E2E', sku: 'E2E-MES', price: 800, cost: 300, quantity: 2, min_stock: 1, category: 'Mesas' },
   );
+  // Taxas de cartão da loja (linha 0 = débito).
+  db.table('card_fees').push(
+    { id: uuid(), installments: 0, percentage: 1.5 },
+    { id: uuid(), installments: 1, percentage: 3 },
+    { id: uuid(), installments: 3, percentage: 4 },
+  );
   db.table('customers').push({ id: uuid(), name: 'Cliente E2E', cpf_cnpj: '', phone: '', email: '', address: '' });
   db.table('company_settings').push({ id: uuid(), name: 'Loja E2E Móveis', cnpj: '', phone: '', address: '', receipt_message: '' });
   return db;
@@ -236,11 +242,56 @@ const RPC: Record<string, RpcHandler> = {
     db.overrides = db.overrides.filter(o => !(o.storeId === a.p_store && o.module === a.p_module));
     return { body: null };
   },
-  // create_sale (migração 059): venda, itens, baixa de estoque e lançamento numa chamada só.
+  // create_sale (059 + 060): confere os valores como o banco e grava venda, itens, estoque e lançamentos.
   create_sale: (a, db) => {
-    const sale = { id: a.p_sale?.id || uuid(), ...a.p_sale };
+    const fail = (message: string) => ({ status: 400, body: { code: 'P0001', message } });
+    const sale: Row = { id: a.p_sale?.id || uuid(), ...a.p_sale };
     const items: Row[] = a.p_items || [];
-    if (!items.length) return { status: 400, body: { code: 'P0001', message: 'Não é possível salvar uma venda sem itens.' } };
+    if (!items.length) return fail('Não é possível salvar uma venda sem itens.');
+    if (items.some(i => !(Number(i.quantity) > 0) || !Number.isInteger(Number(i.quantity)))) return fail('A quantidade de cada item deve ser maior que zero.');
+    if (items.some(i => i.product_id && !db.table('products').some(p => p.id === i.product_id))) return fail('Produto não pertence a esta loja.');
+    if (items.some(i => Number(i.unit_price) < 0)) return fail('O preço unitário não pode ser negativo.');
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    const subtotal = items.reduce((acc, i) => acc + Number(i.quantity) * Number(i.unit_price || 0), 0);
+    const discount = Number(sale.discount || 0);
+    if (discount < 0 || discount > subtotal + 0.005) return fail(`O desconto deve ficar entre 0 e o subtotal (${r2(subtotal)}).`);
+    const total = r2(subtotal - discount);
+    if ('total' in sale && Math.abs(Number(sale.total) - total) > 0.01) return fail(`O total da venda não confere com os itens (calculado: ${total}).`);
+    if (!['FULL', 'PARTIAL'].includes(sale.payment_type)) return fail('Tipo de pagamento inválido.');
+    const isCard = (m: unknown) => typeof m === 'string' && (['CREDIT_CARD', 'DEBIT_CARD'].includes(m) || /cart[ãa]o/i.test(m));
+    const isDebit = (m: unknown) => typeof m === 'string' && (m === 'DEBIT_CARD' || /d[ée]bito/i.test(m));
+    let down = Number(sale.down_payment || 0);
+    let remaining = Number(sale.remaining_amount || 0);
+    let cardAmount = 0;
+    if (sale.payment_type === 'FULL') {
+      if (down > 0.005 && Math.abs(down - total) > 0.01) return fail('A entrada deve ficar entre 0 e o total.');
+      remaining = 0;
+      cardAmount = isCard(sale.payment_method) ? total : 0;
+    } else {
+      if (down < 0 || down > total + 0.005) return fail('A entrada deve ficar entre 0 e o total.');
+      if ('remaining_amount' in sale && Math.abs(remaining - (total - down)) > 0.01) return fail(`O restante deve ser o total menos a entrada (${r2(total - down)}).`);
+      remaining = r2(total - down);
+      cardAmount = (isCard(sale.down_payment_method) ? down : 0) + (isCard(sale.remaining_payment_method) ? remaining : 0);
+    }
+    const fee = Number(sale.card_fee_amount || 0);
+    if (fee < 0 || fee > total + 0.005) return fail('A taxa de cartão deve ficar entre 0 e o total.');
+    if (fee > 0.005 && cardAmount === 0) return fail('Taxa de cartão só em pagamento com cartão.');
+    const fees = db.table('card_fees');
+    if (cardAmount > 0 && fees.length) {
+      if (sale.payment_type === 'FULL') {
+        const inst = isDebit(sale.payment_method) ? 0 : Number(sale.card_installments || 0);
+        const pct = Number(fees.find(f => Number(f.installments) === inst)?.percentage || 0);
+        const expected = r2(total * pct / 100);
+        if (Math.abs(fee - expected) > 0.01) return fail(`A taxa de cartão não confere com a taxa da loja (esperado: ${expected}).`);
+      } else {
+        const maxPct = Math.max(...fees.map(f => Number(f.percentage)));
+        if (fee > r2(cardAmount * maxPct / 100) + 0.01) return fail('A taxa de cartão passa da taxa configurada da loja.');
+      }
+    } else if (fee > 0.005) {
+      return fail('Loja sem taxa de cartão cadastrada: a taxa da venda deve ser 0.');
+    }
+
+    Object.assign(sale, { total, down_payment: down, remaining_amount: remaining });
     db.table('sales').push(sale);
     let movimentos = 0;
     for (const it of items) {
@@ -254,9 +305,14 @@ const RPC: Record<string, RpcHandler> = {
     }
     const store = db.stores.find(st => st.id === db.activeStore[db.currentUserId!]);
     let lancamentos = 0;
-    if (store && db.moduleEnabled(store.id, 'financial') && sale.payment_type === 'FULL') {
-      db.table('transactions').push({ id: uuid(), description: `Venda #${String(sale.id).slice(0, 4)}`, amount: sale.total, type: 'INCOME', status: 'PAID', date: sale.date, sale_id: sale.id });
-      lancamentos = 1;
+    if (store && db.moduleEnabled(store.id, 'financial')) {
+      const push = (t: Row) => { db.table('transactions').push({ id: uuid(), sale_id: sale.id, date: sale.date, ...t }); lancamentos += 1; };
+      if (fee > 0.005) push({ description: 'Taxa de Cartão', amount: fee, type: 'EXPENSE', status: 'PAID' });
+      if (sale.payment_type === 'FULL') push({ description: 'Venda', amount: total, type: 'INCOME', status: 'PAID' });
+      else {
+        if (down > 0) push({ description: 'Entrada', amount: down, type: 'INCOME', status: 'PAID' });
+        if (remaining > 0) push({ description: 'Restante', amount: remaining, type: 'INCOME', status: sale.remaining_status === 'PAID' ? 'PAID' : 'PENDING' });
+      }
     }
     return { body: { sale_id: sale.id, itens: items.length, encomendas: 0, ordens_producao: 0, entregas: 0, lancamentos, movimentos_estoque: movimentos } };
   },
