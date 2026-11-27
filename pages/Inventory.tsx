@@ -7,6 +7,7 @@ import { Plus, Trash2, AlertTriangle, DollarSign, Package, TrendingUp, TrendingD
 import { Product, ProductVariant } from '../types';
 import { supabase } from '../lib/supabase';
 import { formatDisplayDate, formatISO, getUUID } from '../lib/utils';
+import { ManagerOnly } from '../components/ManagerOnly';
 
 export const Inventory: React.FC = () => {
   const { products, addProduct, updateProduct, deleteProduct, categories, registerStockEntry, navigateTo } = useAppStore();
@@ -561,9 +562,11 @@ export const Inventory: React.FC = () => {
 
           <div className="md:col-span-2 flex justify-between items-center mt-4 pt-4 border-t border-wine-100 dark:border-slate-700">
             {formData.id && (
+              <ManagerOnly>
               <Button type="button" variant="danger" onClick={() => setShowDeleteConfirm(true)}>
                 <Trash2 size={18} /> Excluir
               </Button>
+              </ManagerOnly>
             )}
             <div className="flex gap-2 ml-auto">
               <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>

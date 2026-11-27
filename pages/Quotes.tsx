@@ -8,6 +8,7 @@ import { Search, ShoppingCart, Trash, Plus, Minus, ArrowRight, ArrowLeft, Printe
 import { supabase } from '../lib/supabase';
 
 import { ServiceConfigForm } from '../components/ServiceConfigForm';
+import { ManagerOnly } from '../components/ManagerOnly';
 
 interface CartItem extends Product {
     quantity: number;
@@ -1078,9 +1079,11 @@ export const Quotes: React.FC = () => {
                             <Button variant="outline" size="sm" onClick={() => handleQuickPrint(quote)} className="gap-2 border-slate-300">
                                 <Printer size={14} /> Imprimir / PDF
                             </Button>
+                            <ManagerOnly>
                             <Button variant="ghost" size="sm" onClick={() => deleteQuote(quote.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 col-span-2">
                                 <Trash2 size={14} /> Excluir
                             </Button>
+                            </ManagerOnly>
                         </div>
                     </Card>
                 ))}
@@ -1112,7 +1115,6 @@ export const Quotes: React.FC = () => {
             {/* PRINT TEMPLATE (Hidden from screen) */}
             {/* PRINT TEMPLATE (Hidden from screen) */}
             <style>{`
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
 @media print {
     @page { margin: 0; size: auto; }
     body * { visibility: hidden !important; height: 0 !important; overflow: hidden !important; }

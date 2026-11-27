@@ -1,0 +1,4 @@
+# Achado conhecido e aceito: chave publicável antiga do Supabase no histórico (migração 001, já sanitizada em c1ab389).
+# Não é segredo de servidor, mas deve ser rotacionada — ver docs/riscos-seguranca.md (R5).
+8fc5128a3f2cb7bca53c9e29c07ff98075b347fa:database/migrations/001_create_push_subscriptions.sql:supabase-publishable-key:61
+8fc5128a3f2cb7bca53c9e29c07ff98075b347fa:database/migrations/001_create_push_subscriptions.sql:generic-api-key:61

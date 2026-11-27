@@ -22,25 +22,35 @@ export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { 
   return <button className={`${baseStyle} ${variants[variant]} ${className}`} {...props} />;
 };
 
-export const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement> & { label?: string }> = ({ label, className = '', ...props }) => (
-  <div className="flex flex-col gap-1 w-full">
-    {label && <label className="text-xs font-semibold text-wine-600 dark:text-wine-300 uppercase tracking-wider">{label}</label>}
-    <input
-      className={`border border-wine-200 dark:border-slate-600 bg-wine-50 dark:bg-slate-700 rounded-lg px-3 py-2 focus:ring-2 focus:ring-wine-500 focus:border-transparent outline-none transition-all placeholder-wine-400 dark:placeholder-slate-400 text-black dark:text-white ${className}`}
-      onFocus={(e) => e.target.select()}
-      {...props}
-    />
-  </div>
-);
+// O rótulo fica ligado ao campo (htmlFor/id): leitor de tela anuncia o nome e o clique no rótulo foca o campo.
+export const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement> & { label?: string }> = ({ label, className = '', id, ...props }) => {
+  const autoId = React.useId();
+  const fieldId = id ?? autoId;
+  return (
+    <div className="flex flex-col gap-1 w-full">
+      {label && <label htmlFor={fieldId} className="text-xs font-semibold text-wine-600 dark:text-wine-300 uppercase tracking-wider">{label}</label>}
+      <input
+        id={fieldId}
+        className={`border border-wine-200 dark:border-slate-600 bg-wine-50 dark:bg-slate-700 rounded-lg px-3 py-2 focus:ring-2 focus:ring-wine-500 focus:border-transparent outline-none transition-all placeholder-wine-400 dark:placeholder-slate-400 text-black dark:text-white ${className}`}
+        onFocus={(e) => e.target.select()}
+        {...props}
+      />
+    </div>
+  );
+};
 
-export const Select: React.FC<React.SelectHTMLAttributes<HTMLSelectElement> & { label?: string }> = ({ label, className = '', children, ...props }) => (
-  <div className="flex flex-col gap-1 w-full">
-    {label && <label className="text-xs font-semibold text-wine-600 dark:text-wine-300 uppercase tracking-wider">{label}</label>}
-    <select className={`border border-wine-200 dark:border-slate-600 bg-wine-50 dark:bg-slate-700 rounded-lg px-3 py-2 focus:ring-2 focus:ring-wine-500 focus:border-transparent outline-none transition-all text-black dark:text-white ${className}`} {...props}>
-      {children}
-    </select>
-  </div>
-);
+export const Select: React.FC<React.SelectHTMLAttributes<HTMLSelectElement> & { label?: string }> = ({ label, className = '', children, id, ...props }) => {
+  const autoId = React.useId();
+  const fieldId = id ?? autoId;
+  return (
+    <div className="flex flex-col gap-1 w-full">
+      {label && <label htmlFor={fieldId} className="text-xs font-semibold text-wine-600 dark:text-wine-300 uppercase tracking-wider">{label}</label>}
+      <select id={fieldId} className={`border border-wine-200 dark:border-slate-600 bg-wine-50 dark:bg-slate-700 rounded-lg px-3 py-2 focus:ring-2 focus:ring-wine-500 focus:border-transparent outline-none transition-all text-black dark:text-white ${className}`} {...props}>
+        {children}
+      </select>
+    </div>
+  );
+};
 
 export const SearchableSelect: React.FC<{
   label?: string;
@@ -268,14 +278,15 @@ export const Modal: React.FC<{
     return () => { document.body.style.overflow = 'unset'; };
   }, [isOpen]);
 
+  const titleId = React.useId();
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-wine-950/40 dark:bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl animate-scale-in relative flex flex-col max-h-[90vh] border border-wine-100 dark:border-slate-700">
+      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl animate-scale-in relative flex flex-col max-h-[90vh] border border-wine-100 dark:border-slate-700">
         <div className="flex justify-between items-center p-6 border-b border-wine-100 dark:border-slate-700 flex-shrink-0">
-          <h3 className="text-xl font-bold text-wine-900 dark:text-white">{title}</h3>
-          <button onClick={onClose} className="text-wine-300 hover:text-wine-600 dark:text-slate-400 dark:hover:text-white transition-colors p-1 rounded-full hover:bg-wine-50 dark:hover:bg-slate-700">
+          <h3 id={titleId} className="text-xl font-bold text-wine-900 dark:text-white">{title}</h3>
+          <button onClick={onClose} aria-label="Fechar" className="text-wine-300 hover:text-wine-600 dark:text-slate-400 dark:hover:text-white transition-colors p-1 rounded-full hover:bg-wine-50 dark:hover:bg-slate-700">
             <X size={24} />
           </button>
         </div>

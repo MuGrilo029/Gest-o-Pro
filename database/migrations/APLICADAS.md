@@ -41,3 +41,36 @@ A tabela de histórico do Supabase (`supabase_migrations.schema_migrations`) nã
 | 041 | NÃO aplicada (teste do webhook em banco, Back-end; ver mensagem) | Teste ROLLBACK ainda não rodado; não é migração de produção |
 | 046 | aplicada (26/11/2026, teste em ROLLBACK 8/8; verificada: dashboard e sales com core = true; plano trial com 13 módulos do Avançado) | Módulos essenciais (core): Dashboard e Vendas/PDV, não desligáveis. Plano `trial` = módulos do Avançado; loja em trial vigente sem assinatura lê o Avançado (`store_effective_status` = 'trial'). Fonte: `Shared/gestao-pro-revisao/sql/046-*.sql` |
 | 047 | aplicada (26/11/2026, teste em ROLLBACK 5/5; verificada: `store_brand_color` presente, sem EXECUTE para anon) | Getter da cor da marca (`store_brand_color(loja)`): devolve a cor só com o módulo brand habilitado; admin ou membro da loja. Fonte: `Shared/gestao-pro-revisao/sql/047-*.sql` |
+
+## Conferência de 27/11/2026 (Backend, só leitura em produção)
+
+Método: o banco local (PGlite) foi montado com `MASTER_SCHEMA.sql.example` + as migrações desta pasta, e comparado com produção por hash do corpo de cada função de `public` (`md5` de `prosrc`, sem `\r`), pelas políticas de RLS (`public` e `storage`) e pelas colunas. Resultado: igual a produção até a 047, com as exceções abaixo. Os arquivos 022–047 aplicados foram copiados de `Shared/gestao-pro-revisao/sql/*-apply.sql` para esta pasta (nomes `0NN_descricao.sql`). Script: `node tests/db/replay.mjs --hashes`.
+
+| Migração | Estado em produção | Evidência |
+|---|---|---|
+| 023 (sync_sale_financial) | NÃO aplicada | função `sync_sale_financial` não existe; arquivo só em `Shared/gestao-pro-revisao/sql` |
+| 024 (cobrança) | aplicada | `plans`, `plan_modules`, `billing_events`, `process_billing_event` com hash igual |
+| 025 | não existe arquivo | — |
+| 026 (CPF na venda) | NÃO aplicada | coluna `sales.customer_cpf` não existe |
+| 027 (backfill de sale_id) | NÃO aplicada | 0 de 31 lançamentos com `sale_id` |
+| 028 (lançamento por papel) | NÃO aplicada | `transactions_insert` só checa a loja. Substituída pela **057** |
+| 029 (trial 1 h fixo) | NÃO aplicada | `admin_create_client` e `admin_set_status` com o corpo da 022. Arquivo em `pendentes/` (duração do trial bloqueada pelo dono) |
+| 030, 033 | substituídas pela 038 | `admin_register_payment` com o corpo da 038 |
+| 039 (correção expire_billing_grace) | aplicada | hash igual |
+| 041 | não é migração | teste do webhook |
+| objetos sem migração | existem | `card_fees`, `simulations` (registradas na **047b**, sem efeito em produção) e `rls_auto_enable` (gatilho do painel) |
+| `supabase_migrations` | não existe | — |
+| pg_cron | 3 jobs | `expire-billing-grace`, `expire-module-overrides`, `apply-pending-plan-changes` |
+
+### A aplicar (escritas e testadas só no PGlite; nenhuma aplicada)
+
+047b, 048, 049, 050, 051, 052, 053, 054, 055, 056, 057, 058, 059, 060, 061, 062, 063 — nesta ordem. A 060 só redefine create_sale e cria _is_finite/_is_card_method/_is_debit_method (nenhuma tabela alterada). A 061 adiciona CHECK NOT VALID de finitude em sales, sale_items e transactions (sem mexer em dados). A 062 adiciona CHECK NOT VALID de 0 a 100 em card_fees.percentage. A 063 cria delete_sale e tira o DELETE direto de sales (policy sales_delete e privilégio); só junto com o front usando delete_sale. A 059 (tabelas: transactions, sales, sale_items; apaga _seller_sale_tx_ok) só junto com o front usando create_sale no addSale; sem isso, o vendedor não consegue vender. Ver a lista com as tabelas alteradas no relatório do Backend ao SeniorDev.
+
+## Aplicação de 27/11/2026 (SeniorDev, com aprovação do dono via Tonny Stark)
+
+- **Snapshot antes:** schema `snapshot_20261127` no próprio banco (36 tabelas de `public` copiadas, mais `_policies` 57, `_functions` 68, `_grants`, `_triggers` e `_storage_objects_meta`), sem acesso para anon e authenticated. Cópia local em JSON fora do repositório.
+- **Lote 1** (compatível com o front antigo): 047b, 048, 049, 050, 051, 052, 053, 054, 055, 056, 057, 058, 062 — todas sem erro, nesta ordem.
+- **Deploy:** branch `preparacao-lancamento` (cdae04f) publicada em produção na Vercel (`gest-o-pro-three.vercel.app`), a partir da branch, sem mudar a `main`.
+- **Lote 2** (só com o front novo): 059, 060, 061, 063 — sem erro, aplicadas logo antes da publicação.
+- **Verificação:** planos 1/3/6 e anual = 10×; `custom` inativo; core = dashboard, sales, customers, inventory, settings; `delete_sale` existe e `_seller_sale_tx_ok` não; `sales` sem policy nem GRANT de DELETE para authenticated; trigger `tg_sales_seller_guard`; CHECKs de finitude e de `card_fees`; anon sem EXECUTE em `create_sale` e `delete_sale`. Teste em transação desfeita, como vendedor real: INSERT direto em `sales` e em `transactions`, DELETE direto em `sales` e `delete_sale` foram recusados.
+- **Não aplicadas:** 023, 026, 027 e 029 (pendentes ou substituídas, ver acima). `purge_unconverted_trial` (052) existe, mas não está agendada nem foi executada.

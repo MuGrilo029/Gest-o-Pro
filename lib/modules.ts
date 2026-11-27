@@ -199,7 +199,6 @@ export const MODULES: ModuleDefinition[] = [
     views: [
       { view: 'SETTINGS', label: 'Configurações', inMenu: true },
       { view: 'TEAM', label: 'Equipe', inMenu: true },
-      { view: 'STORE_ADMIN', label: 'Administração (Lojas)', inMenu: true },
     ],
   },
 ];
@@ -219,8 +218,8 @@ export const ROLE_LABELS: Record<StoreRole, string> = {
 };
 
 /**
- * Telas só do administrador da plataforma (o desenvolvedor): criar lojas,
- * ligar módulos e montar equipes. Dono e gerente de loja não acessam.
+ * Telas só do administrador da plataforma (o dono do SaaS, is_platform_admin): o painel de assinaturas.
+ * Não existe papel de suporte (decisão 33). Dono, gerente e vendedor de loja não acessam.
  */
 export const PLATFORM_ADMIN_VIEWS: AppView[] = ['STORE_ADMIN'];
 
@@ -278,6 +277,16 @@ export const dependentsOf = (key: ModuleKey): ModuleKey[] => {
   };
   visit(key);
   return [...result];
+};
+
+/**
+ * Impersonação (decisões 33 e 36): só o dono do SaaS (is_platform_admin).
+ * Barreira da interface; o servidor também recusa (set_active_store → is_store_member).
+ */
+export const assertCanImpersonate = (isPlatformAdmin: boolean): void => {
+  if (isPlatformAdmin !== true) {
+    throw new Error('Apenas o administrador da plataforma pode acessar outra loja.');
+  }
 };
 
 /**

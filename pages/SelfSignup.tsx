@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Store, User, Mail, Lock, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { PRIVACY_URL, TERMS_URL } from '../lib/legal';
+import { PRIVACY_URL, PENDING_TERMS_KEY, TERMS_VERSION, recordTermsAcceptance, termsLink } from '../lib/legal';
+import { PASSWORD_RULE_LABEL, passwordProblem } from '../lib/utils';
 
 /** Chave do nome da loja guardada enquanto o e-mail aguarda confirmação (o teste começa no primeiro login). */
 export const PENDING_TRIAL_KEY = 'pendingTrialStoreName';
-
-/** Ponto de integração do Cloudflare Turnstile. Sem chave ainda: não bloqueia o cadastro. */
-const TURNSTILE_SITE_KEY = (import.meta as any).env?.VITE_TURNSTILE_SITE_KEY as string | undefined;
 
 interface SelfSignupProps {
   onBack: () => void;
@@ -21,6 +19,7 @@ interface SelfSignupProps {
 export const SelfSignup: React.FC<SelfSignupProps> = ({ onBack }) => {
   const [form, setForm] = useState({ storeName: '', name: '', email: '', password: '', website: '' });
   const [accepted, setAccepted] = useState(false);
+  const terms = termsLink();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -55,8 +54,9 @@ export const SelfSignup: React.FC<SelfSignupProps> = ({ onBack }) => {
       setError('Informe um e-mail válido.');
       return;
     }
-    if (form.password.length < 8) {
-      setError('A senha precisa ter pelo menos 8 caracteres.');
+    const pwdProblem = form.password ? passwordProblem(form.password) : 'Informe uma senha.';
+    if (pwdProblem) {
+      setError(pwdProblem);
       return;
     }
 
@@ -81,12 +81,20 @@ export const SelfSignup: React.FC<SelfSignupProps> = ({ onBack }) => {
         const { error: rpcError } = await supabase.rpc('start_self_trial', { p_name: storeName });
         if (rpcError) throw new Error(rpcError.message);
         localStorage.removeItem(PENDING_TRIAL_KEY);
+        // Aceite dos Termos gravado depois da loja (a RPC registra a loja ativa; decisão 47).
+        // A loja já existe: se o registro falhar ou a RPC ainda não existir, fica pendente e o
+        // Login grava no próximo acesso (repetir o cadastro cairia em "e-mail já tem conta").
+        const saved = await recordTermsAcceptance(TERMS_VERSION).catch(() => false);
+        if (saved) localStorage.removeItem(PENDING_TERMS_KEY);
+        else localStorage.setItem(PENDING_TERMS_KEY, TERMS_VERSION);
         window.location.reload();
         return;
       }
 
       // Sem sessão (confirmação de e-mail pendente): o teste começa no primeiro login.
       localStorage.setItem(PENDING_TRIAL_KEY, storeName);
+      // O aceite é gravado no primeiro login (pages/Login.tsx), quando houver sessão.
+      localStorage.setItem(PENDING_TERMS_KEY, TERMS_VERSION);
       setInfo(
         'Enviamos um link de confirmação para seu e-mail. Confirme e entre com sua senha: o teste de 1 hora começa nesse momento.'
       );
@@ -153,7 +161,7 @@ export const SelfSignup: React.FC<SelfSignupProps> = ({ onBack }) => {
           </div>
 
           <div>
-            <label htmlFor="signup-password" className={labelClass}>Senha (mínimo 8 caracteres)</label>
+            <label htmlFor="signup-password" className={labelClass}>Senha ({PASSWORD_RULE_LABEL})</label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
               <input id="signup-password" name="password" type="password" value={form.password} onChange={set('password')} className={inputClass} placeholder="••••••••" autoComplete="new-password" required />
@@ -161,19 +169,16 @@ export const SelfSignup: React.FC<SelfSignupProps> = ({ onBack }) => {
           </div>
 
           <label className="flex items-start gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-            <input type="checkbox" checked={accepted} onChange={e => setAccepted(e.target.checked)} className="mt-1" required />
+            <input id="signup-terms" type="checkbox" checked={accepted} onChange={e => setAccepted(e.target.checked)} className="mt-1" required aria-required="true" />
             <span>
               Li e aceito os{' '}
-              {TERMS_URL
-                ? <a href={TERMS_URL} target="_blank" rel="noopener noreferrer" className="underline">Termos de Uso</a>
+              {terms
+                ? <a href={terms.url} target="_blank" rel="noopener noreferrer" className="underline">Termos de Uso{terms.draft ? ' (rascunho)' : ''}</a>
                 : <span>Termos de Uso</span>}
               {' '}e a{' '}
               <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer" className="underline">Política de Privacidade</a>.
             </span>
           </label>
-
-          {/* Ponto de integração Cloudflare Turnstile: só renderiza quando houver chave */}
-          {TURNSTILE_SITE_KEY && <div className="cf-turnstile" data-sitekey={TURNSTILE_SITE_KEY} />}
 
           <button
             type="submit"

@@ -23,7 +23,6 @@ const Orders = lazyPage(() => import('../../pages/Orders'), 'Orders');
 const Production = lazyPage(() => import('../../pages/Production'), 'Production');
 const Reports = lazyPage(() => import('../../pages/Reports'), 'Reports');
 const Team = lazyPage(() => import('../../pages/Team'), 'Team');
-const StoreAdmin = lazyPage(() => import('../../pages/StoreAdmin'), 'StoreAdmin');
 const StockEntries = lazyPage(() => import('../../pages/StockEntries'), 'StockEntries');
 
 const ICONS: Partial<Record<AppView, React.ReactNode>> = {
@@ -60,7 +59,6 @@ const renderPage = (view: AppView) => {
     case 'PRODUCTION': return <Production />;
     case 'REPORTS': return <Reports />;
     case 'TEAM': return <Team />;
-    case 'STORE_ADMIN': return <StoreAdmin />;
     case 'STOCK_LOGS': return <StockEntries />;
     default: return null;
   }

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Lock, Mail, Loader2, AlertCircle } from 'lucide-react';
 import { SelfSignup, PENDING_TRIAL_KEY } from './SelfSignup';
+import { PENDING_TERMS_KEY, recordTermsAcceptance } from '../lib/legal';
 
 /**
  * Tela de acesso.
@@ -39,8 +40,17 @@ export const Login: React.FC = () => {
         const { error: rpcError } = await supabase.rpc('start_self_trial', { p_name: pendingStore });
         if (rpcError) throw new Error(rpcError.message);
         localStorage.removeItem(PENDING_TRIAL_KEY);
-        window.location.reload();
       }
+
+      // Aceite dos Termos feito no cadastro, gravado agora que há sessão e loja (decisão 47).
+      const pendingTerms = localStorage.getItem(PENDING_TERMS_KEY);
+      if (pendingTerms) {
+        // Só sai da fila quando o banco confirma; falha não impede o login (tenta de novo no próximo).
+        const saved = await recordTermsAcceptance(pendingTerms).catch(() => false);
+        if (saved) localStorage.removeItem(PENDING_TERMS_KEY);
+      }
+
+      if (pendingStore) window.location.reload();
     } catch (err: any) {
       setError(err.message);
     } finally {

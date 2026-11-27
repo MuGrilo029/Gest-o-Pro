@@ -6,6 +6,7 @@ import { Plus, Trash2, Search, Phone, MapPin, Mail, MessageCircle } from 'lucide
 import { Customer } from '../types';
 import { getUUID } from '../lib/utils';
 import { docProblem, findDocOwner } from '../lib/documents';
+import { ManagerOnly } from '../components/ManagerOnly';
 
 export const Customers: React.FC = () => {
   const { customers, addCustomer, updateCustomer, deleteCustomer } = useAppStore();
@@ -141,9 +142,11 @@ export const Customers: React.FC = () => {
 
           <div className="md:col-span-2 flex justify-between items-center mt-4 pt-4 border-t border-wine-100">
             {formData.id && (
+              <ManagerOnly>
               <Button type="button" variant="danger" onClick={() => setShowDeleteConfirm(true)}>
                 <Trash2 size={18} /> Excluir
               </Button>
+              </ManagerOnly>
             )}
             <div className="flex gap-2 ml-auto">
               <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>

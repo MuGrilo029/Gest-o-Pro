@@ -23,5 +23,13 @@ dist-ssr
 *.sln
 *.sw?
 
+# Variáveis de ambiente (segredos) — só o modelo .env.example vai para o git
+.env
+.env.*
+!.env.example
+
 # Supabase CLI temp
 supabase/.temp/
+
+test-results/
+playwright-report/
