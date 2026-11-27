@@ -19,7 +19,7 @@ export interface StoreMember {
 
 /** Prefixos combinados com o Backend (ERRCODE P0001; o manage-users devolve 409 com a mesma mensagem). */
 export const SELLER_LIMIT_ERROR_PREFIX = 'LIMITE_VENDEDORES:';
-const TEAM_ERROR_PREFIXES = [SELLER_LIMIT_ERROR_PREFIX, 'UMA_LOJA_POR_DONO:'];
+const TEAM_ERROR_PREFIXES = [SELLER_LIMIT_ERROR_PREFIX, 'UMA_LOJA_POR_DONO:', 'CONTA_NAO_CONFIRMADA:'];
 
 /** Troca o código técnico do erro por uma frase para a tela. */
 export const friendlyTeamError = (message: string): string => {

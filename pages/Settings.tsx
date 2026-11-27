@@ -13,6 +13,7 @@ import { DEFAULT_BRAND_COLOR } from '../lib/brand';
 import { PushNotificationStatus } from '../components/PushNotificationProvider';
 import { PlanChoice } from '../components/PlanChoice';
 import { SellerDiscountLimitField } from '../components/SellerDiscountLimitField';
+import { storeFilePath } from '../lib/storagePath';
 
 
 export const Settings: React.FC = () => {
@@ -40,7 +41,7 @@ export const Settings: React.FC = () => {
 
   // Configurações só abrem para dono/gerente (ver lib/modules.ts), então
   // todas as abas ficam liberadas para quem chega aqui.
-  const { isManager, brandColor, setBrandColor, legacyMode, isPlatformAdmin, impersonatedStore } = useStore();
+  const { isManager, brandColor, setBrandColor, legacyMode, isPlatformAdmin, impersonatedStore, activeStore } = useStore();
   // Admin da plataforma sem personificar loja: esconde abas que só o lojista deve editar.
   const isPlatformAdminView = isPlatformAdmin && !impersonatedStore;
   // Admin da plataforma: sem gestão interna da loja (categorias, taxas, empresa, emissão, importação)
@@ -122,13 +123,11 @@ const ADMIN_HIDDEN_TABS = ['GENERAL', 'CATEGORIES', 'ORDERS', 'FEES', 'IMPORT_EX
     if (!e.target.files || e.target.files.length === 0) return;
 
     const file = e.target.files[0];
-    const fileExt = file.name.split('.').pop();
-    const fileName = `company_logo_${Date.now()}.${fileExt}`;
-    const filePath = `${fileName}`;
 
     setIsUploading(true);
 
     try {
+      const filePath = storeFilePath(activeStore?.id, file.name, 'company_logo_');
       const { error: uploadError } = await supabase.storage
         .from('products') // Using 'products' bucket as it is already configured with public policies
         .upload(filePath, file);

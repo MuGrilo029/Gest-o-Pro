@@ -32,6 +32,9 @@ export interface MockStore {
   ownerEmail: string;
   endsAt: string | null;
   createdAt: string;
+  /** Exclusão começada e não concluída (066). */
+  deletedAt?: string;
+  filesLeft?: number;
   /** stores.seller_max_discount_percent (064); ausente = 10. */
   maxDiscount?: number;
 }
@@ -42,7 +45,7 @@ const PLAN_LIMITS: Record<string, number> = { inicio: 1, crescimento: 3, avancad
 const PLAN_RANK: Record<string, number> = { inicio: 0, crescimento: 1, avancado: 2 };
 const CORE = new Set(['dashboard', 'sales', 'customers', 'inventory', 'settings']);
 const PLAN_MODULES: Record<string, string[]> = {
-  inicio: [...CORE],
+  inicio: [...CORE, 'financial'], // 065: Financeiro também no Início
   crescimento: [...CORE, 'financial', 'boletos', 'reports', 'production', 'quotes', 'suppliers', 'orders'],
   avancado: [...CORE, 'financial', 'boletos', 'reports', 'production', 'quotes', 'suppliers', 'orders', 'deliveries', 'push_notifications', 'custom_production', 'brand'],
 };
@@ -66,6 +69,15 @@ export class MockDb {
   tables: Record<string, Row[]> = {};
   overrides: { storeId: string; module: string; enabled: boolean }[] = [];
   termsAccepted: { userId: string; version: string }[] = [];
+  /** create_store: pedidos já atendidos (chave de repetição → resposta). */
+  createRequests = new Map<string, { storeId: string; accountCreated: boolean; email: string }>();
+  /** Falhas e demora injetadas pelos testes no manage-users. */
+  faults: { createLogin?: number; lostResponse?: number; deleteStore?: number; deletePartial?: number; blocker?: string; delayMs?: number } = {};
+  /** Arquivos aceitos pelo Storage falso ("bucket/caminho") e tentativas recusadas. */
+  uploads: string[] = [];
+  refusedUploads: string[] = [];
+  removedFiles: string[] = [];
+  signedFiles: string[] = [];
   /** Usuário logado (pelo token da última chamada). */
   currentUserId: string | null = null;
   activeStore: Record<string, string> = {};
@@ -135,6 +147,7 @@ const storeRow = (db: MockDb, s: MockStore) => ({
   valid_until: s.status === 'trial' ? null : s.endsAt,
   created_at: s.createdAt,
   owner_email: s.ownerEmail,
+  exclusao_pendente: !!s.deletedAt,
   sellers_count: db.sellers(s.id).length,
   max_sellers: s.plan ? PLAN_LIMITS[s.plan] ?? null : null,
 });
@@ -144,13 +157,25 @@ const requireAdmin = (db: MockDb) => {
   return null;
 };
 
+/** 068: dono ou gerente da loja ativa (ou o admin na loja aberta) com Financeiro e Boletos ligados. */
+const canAccessBoletos = (db: MockDb) => {
+  const uid = db.currentUserId;
+  const storeId = uid ? db.activeStore[uid] ?? (db.user()?.isPlatformAdmin ? db.stores[0]?.id : undefined) : undefined;
+  if (!uid || !storeId) return false;
+  const role = db.members.find(m => m.storeId === storeId && m.userId === uid)?.role;
+  const manager = db.user()?.isPlatformAdmin || role === 'OWNER' || role === 'MANAGER';
+  return !!manager && db.moduleEnabled(storeId, 'financial') && db.moduleEnabled(storeId, 'boletos');
+};
+
 const RPC: Record<string, RpcHandler> = {
+  can_access_boletos: (_a, db) => ({ body: canAccessBoletos(db) }),
   my_stores: (_a, db) => {
     const uid = db.currentUserId;
     const u = db.user();
-    const list = u?.isPlatformAdmin
+    const list = (u?.isPlatformAdmin
       ? db.stores.map(s => ({ ...s, role: 'OWNER' }))
-      : db.members.filter(m => m.userId === uid).map(m => ({ ...db.stores.find(s => s.id === m.storeId)!, role: m.role, permissions: m.permissions }));
+      : db.members.filter(m => m.userId === uid).map(m => ({ ...db.stores.find(s => s.id === m.storeId)!, role: m.role, permissions: m.permissions }))
+    ).filter(s => !s.deletedAt);
     return { body: list.map(s => ({ id: s.id, name: s.name, role: (s as any).role, permissions: (s as any).permissions || [], is_active_store: db.activeStore[uid!] === s.id })) };
   },
   my_store_access: (_a, db) => ({
@@ -376,6 +401,96 @@ const RPC: Record<string, RpcHandler> = {
   start_self_trial: () => ({ body: null }),
 };
 
+/** manage-users: create_store, delete_store_preview e delete_store (contrato do Backend, 956ad91). */
+const handleStoreAction = (b: Row, db: MockDb): { status?: number; body: unknown } | null => {
+  if (!['create_store', 'delete_store_preview', 'delete_store'].includes(b.action)) return null;
+  const fail = (status: number, error: string) => ({ status, body: { error } });
+  if (!db.user()?.isPlatformAdmin) return fail(403, 'Apenas o administrador da plataforma pode fazer isso.');
+
+  if (b.action === 'create_store') {
+    const email = String(b.email || '').trim().toLowerCase();
+    const done = db.createRequests.get(b.request_id);
+    if (done) {
+      if (done.email !== email) return fail(409, 'REQUISICAO_REUTILIZADA: este pedido já foi usado com outros dados.');
+      return { body: { ok: true, store_id: done.storeId, account_created: done.accountCreated, temporary_password: done.accountCreated ? '12345678' : null, already_created: true } };
+    }
+    const existing = db.users.find(u => u.email === email);
+    if (existing && db.members.some(m => m.userId === existing.id && m.role === 'OWNER')) {
+      return fail(409, 'UMA_LOJA_POR_DONO: esta conta já é dona de outra loja.');
+    }
+    if (!existing && (db.faults.createLogin ?? 0) > 0) {
+      db.faults.createLogin! -= 1; // tudo ou nada: nenhuma loja sobra
+      return fail(502, 'Não foi possível criar o login do dono. Nenhuma loja foi criada.');
+    }
+    const now = Date.now();
+    const trial = b.mode === 'trial';
+    const s: MockStore = {
+      id: uuid(), name: b.store_name, status: trial ? 'trial' : 'active', plan: trial ? null : b.plan,
+      ownerEmail: email, endsAt: new Date(now + (trial ? 3600000 : (b.days || 30) * 86400000)).toISOString(), createdAt: new Date(now).toISOString(),
+    };
+    db.stores.push(s);
+    const u = existing ?? { id: uuid(), email, password: '12345678', name: b.owner_name };
+    if (!existing) db.users.push(u);
+    db.members.push({ storeId: s.id, userId: u.id, email: u.email, name: u.name, role: 'OWNER', permissions: [] });
+    db.createRequests.set(b.request_id, { storeId: s.id, accountCreated: !existing, email });
+    if ((db.faults.lostResponse ?? 0) > 0) {
+      db.faults.lostResponse! -= 1; // o servidor criou, mas a resposta se perdeu
+      return fail(504, 'O servidor demorou demais para responder.');
+    }
+    return { body: { ok: true, store_id: s.id, account_created: !existing, temporary_password: existing ? null : '12345678', already_created: false } };
+  }
+
+  const store = db.stores.find(s => s.id === b.store_id);
+  if (b.action === 'delete_store_preview') {
+    if (!store) return fail(404, 'Loja não encontrada.');
+    const gone = !!store.deletedAt;
+    const members = db.members.filter(m => m.storeId === store.id);
+    return {
+      body: {
+        ok: true,
+        preview: {
+          store: { id: store.id, name: store.name, status: store.status, deleted_at: store.deletedAt ?? null },
+          rows: gone ? { sales: 0, products: 0 } : { sales: db.table('sales').length, products: db.table('products').length, store_members: members.length, quotes: 0 },
+          storage: { products: store.filesLeft ?? 2, 'producao-anexos': 0 },
+          logins: members.map(m => ({ user_id: m.userId, email: m.email, role: m.role, action: 'apagar', reason: null })),
+          logins_rule: 'apaga_todos',
+          warning: (() => {
+            const affected = members
+              .filter(m => db.members.some(o => o.userId === m.userId && o.storeId !== store.id))
+              .map(m => db.stores.find(s => s.id !== store.id && db.members.some(o => o.userId === m.userId && o.storeId === s.id))?.name)
+              .filter(Boolean) as string[];
+            return affected.length ? 'As seguintes lojas ficarao sem dono: ' + affected.join(', ') + '.' : null;
+          })(),
+          retained: { admin_audit_logs: 3 },
+          blocker: db.faults.blocker ?? null,
+        },
+      },
+    };
+  }
+  // delete_store: repetir continua de onde parou; loja já concluída responde ok.
+  const result = (s: MockStore | undefined, status: 'concluida' | 'parcial', extra: Row = {}) => ({
+    body: { ok: true, store_id: b.store_id, store_name: s?.name, status, storage_remaining: s?.filesLeft ?? 0, logins_remaining: 0, logins_kept: [], files_removed: 0, logins_deleted: 0, errors: [], ...extra },
+  });
+  if (!store) return result(undefined, 'concluida');
+  if (String(b.confirm_name).trim() !== store.name.trim()) return fail(409, 'NOME_NAO_CONFERE: o nome digitado não confere com o nome da loja.');
+  if (db.faults.blocker) return fail(409, 'ASSINATURA_NO_GATEWAY: ' + db.faults.blocker);
+  if ((db.faults.deleteStore ?? 0) > 0) {
+    db.faults.deleteStore! -= 1; // falhou no banco: nada mudou
+    return fail(500, 'Não foi possível excluir a loja. Nada foi apagado.');
+  }
+  if ((db.faults.deletePartial ?? 0) > 0) {
+    db.faults.deletePartial! -= 1; // banco apagado, arquivos sobraram
+    store.deletedAt = new Date().toISOString();
+    store.status = 'expired';
+    store.filesLeft = 2;
+    return result(store, 'parcial', { errors: ['Não foi possível apagar arquivos de products.'] });
+  }
+  db.members = db.members.filter(m => m.storeId !== store.id);
+  db.stores = db.stores.filter(s => s.id !== store.id);
+  for (const [uid, sid] of Object.entries(db.activeStore)) if (sid === store.id) delete db.activeStore[uid];
+  return result({ ...store, filesLeft: 0 }, 'concluida');
+};
+
 /** Lê os filtros simples do PostgREST que o app usa (coluna=eq.valor). */
 const eqFilters = (url: URL) => {
   const out: [string, string][] = [];
@@ -405,6 +520,37 @@ export const installSupabaseMock = async (page: Page, db: MockDb) => {
 
     const body = (() => { try { return req.postDataJSON(); } catch { return null; } })();
 
+    // ---------------- Storage (como a RLS: só dentro da pasta {store_id}/ da loja ativa)
+    if (path.startsWith('/storage/v1/object/')) {
+      const rest = decodeURIComponent(path.slice('/storage/v1/object/'.length));
+      const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhWz+2wAAAABJRU5ErkJggg==', 'base64');
+      // Leitura pública ou por URL assinada: arquivos antigos continuam abrindo.
+      if (method === 'GET') return route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: pixel });
+      if (method === 'DELETE') {
+        // remove([caminhos]): só o que a política deixa apagar.
+        const bucket = rest.split('/')[0];
+        const storeId = db.activeStore[db.currentUserId!] ?? (db.user()?.isPlatformAdmin ? db.stores[0]?.id : undefined);
+        const prefixes: string[] = req.postDataJSON()?.prefixes ?? [];
+        const allowed = prefixes.filter(p => p.split('/')[0] === storeId && (bucket !== 'boletos' || canAccessBoletos(db)));
+        db.removedFiles.push(...allowed.map(p => `${bucket}/${p}`));
+        return json(route, 200, allowed.map(name => ({ name })));
+      }
+      const sign = rest.startsWith('sign/');
+      const [bucket, ...parts] = (sign ? rest.slice('sign/'.length) : rest).split('/');
+      const objectPath = parts.join('/');
+      const storeId = db.activeStore[db.currentUserId!] ?? (db.user()?.isPlatformAdmin ? db.stores[0]?.id : undefined);
+      if (!db.currentUserId || parts.length < 2 || parts[0] !== storeId || (bucket === 'boletos' && !canAccessBoletos(db))) {
+        db.refusedUploads.push(`${bucket}/${objectPath}`);
+        return json(route, 400, { statusCode: '403', error: 'Unauthorized', message: 'new row violates row-level security policy' });
+      }
+      if (sign) {
+        db.signedFiles.push(`${bucket}/${objectPath}`);
+        return json(route, 200, { signedURL: `/object/sign/${bucket}/${objectPath}?token=e2e` });
+      }
+      db.uploads.push(`${bucket}/${objectPath}`);
+      return json(route, 200, { Key: `${bucket}/${objectPath}`, Id: uuid() });
+    }
+
     // ---------------- Auth
     if (path.startsWith('/auth/v1/')) {
       if (path === '/auth/v1/token') {
@@ -425,6 +571,9 @@ export const installSupabaseMock = async (page: Page, db: MockDb) => {
     // ---------------- Edge Functions
     if (path === '/functions/v1/manage-users') {
       db.calls.push({ name: 'manage-users', args: body || {} });
+      if (db.faults.delayMs) await new Promise(r => setTimeout(r, db.faults.delayMs));
+      const adminAction = handleStoreAction(body || {}, db);
+      if (adminAction) return json(route, adminAction.status ?? 200, adminAction.body);
       if (body?.action === 'create_member') {
         if (body.role === 'SELLER') {
           const st = db.stores.find(s => s.id === body.store_id);

@@ -1,8 +1,13 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useRef, useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../store';
 import { supabase } from '../lib/supabase';
 import { Card, Button, Input, Select, SearchableSelect, Table, Badge, Modal } from '../components/UI';
+import { useStore } from '../contexts/StoreContext';
+import { useHideBoleto } from '../hooks/useHideBoleto';
+import { useBoletoAccess } from '../hooks/useBoletoAccess';
+import { AttachmentLink } from '../components/AttachmentLink';
+import { BOLETO_ACCEPT, removeBoletoFiles, uploadBoleto } from '../lib/boletoStorage';
 import { Plus, CheckCircle, Trash2, Filter, X, Calendar, DollarSign, AlertCircle, Clock, TrendingUp, Sparkles, CalendarCheck, Search, BellRing, PieChart, FileText, Receipt, ArrowUpDown, ArrowUp, ArrowDown, Eye } from 'lucide-react';
 import { parseISO, formatISO, formatDisplayDate, getUUID, isInRange as utilsIsInRange } from '../lib/utils';
 import { Transaction, Sale } from '../types';
@@ -92,6 +97,18 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
   // Logic identifying the view
   const isPayable = type === 'PAYABLES';
   const isBoletoView = type === 'BOLETOS';
+  const hideBoleto = useHideBoleto();
+  // O botão "Relatórios" só aparece para quem abre a tela (no Início, Relatórios não faz parte do plano).
+  const canOpenReports = useStore().canAccessView('REPORTS');
+  const activeStoreId = useStore().activeStore?.id;
+  const canBoletos = useBoletoAccess();
+  // Arquivos enviados com o formulário aberto: os que não forem salvos são apagados.
+  const sessionUploads = useRef<string[]>([]);
+  const discardUploads = (keep?: string) => {
+    const unused = sessionUploads.current.filter(path => path !== keep);
+    sessionUploads.current = [];
+    removeBoletoFiles(unused);
+  };
   const isReceivable = type === 'RECEIVABLES';
 
   const [formData, setFormData] = useState<Partial<Transaction>>({});
@@ -134,7 +151,8 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
         if (!t.hasBoleto || t.type !== 'EXPENSE') return false;
       } else if (isPayable) {
         if (t.type !== 'EXPENSE') return false;
-        if (t.hasBoleto && t.status !== 'PAID') return false; // Show paid boletos in Accounts Payable
+        // Boletos em aberto ficam na tela Boletos; sem ela (Início) aparecem aqui para não sumirem.
+        if (!hideBoleto && t.hasBoleto && t.status !== 'PAID') return false; // Show paid boletos in Accounts Payable
       } else {
         // Receivables
         if (t.type !== 'INCOME') return false;
@@ -161,7 +179,7 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
 
       return true;
     });
-  }, [transactions, isPayable, isBoletoView, searchTerm, filterCategory, filterStatus, timeRange, selectedMonth, selectedYear, customStart, customEnd, filterAccountType]);
+  }, [transactions, isPayable, isBoletoView, searchTerm, filterCategory, filterStatus, timeRange, selectedMonth, selectedYear, customStart, customEnd, filterAccountType, hideBoleto]);
 
   // Data ordenada por coluna
   const sortedData = useMemo(() => {
@@ -321,6 +339,8 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
     setShowForm(true);
   };
 
+  const closeForm = () => { discardUploads(); setShowForm(false); };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSaving || !formData.description || !formData.amount) return;
@@ -354,6 +374,7 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
         addTransaction(transactionData as Transaction);
         addNotification('Novo lançamento adicionado!', 'success');
       }
+      discardUploads(transactionData.attachmentUrl);
       setShowForm(false);
     } finally {
       setIsSaving(false);
@@ -396,22 +417,14 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
     if (!file) return;
     setIsUploading(true);
     try {
-      const fileExt = file.name ? file.name.split('.').pop() : 'png';
-      const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('boletos')
-        .upload(fileName, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data } = supabase.storage.from('boletos').getPublicUrl(fileName);
-
-      setFormData(prev => ({ ...prev, attachmentUrl: data.publicUrl }));
+      // Bucket privado: grava o caminho (na pasta da loja ativa), nunca um endereço público.
+      const path = await uploadBoleto(activeStoreId, file);
+      sessionUploads.current.push(path);
+      setFormData(prev => ({ ...prev, attachmentUrl: path }));
       addNotification('Boleto enviado com sucesso!', 'success');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error uploading:', error);
-      addNotification('Erro no upload. Tente novamente.', 'error');
+      addNotification(error?.message || 'Erro no upload. Tente novamente.', 'error');
     } finally {
       setIsUploading(false);
     }
@@ -535,7 +548,7 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
           </div>
 
           <div className="flex items-center gap-2">
-            {isPayable && (
+            {isPayable && canOpenReports && (
               <Button variant="secondary" onClick={() => {
                 localStorage.setItem('REPORTS_DEFAULT_TAB', 'EXPENSES');
                 navigateTo('REPORTS');
@@ -919,16 +932,15 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
                     )}
 
                     {t.attachmentUrl && (
-                      <a
-                        href={t.attachmentUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title="Ver Boleto/Anexo"
+                      <AttachmentLink
+                        attachment={t.attachmentUrl}
+                        canAccess={canBoletos}
+                        title={hideBoleto ? 'Ver Anexo' : 'Ver Boleto/Anexo'}
+                        onError={m => addNotification(m, 'error')}
                         className="p-1 text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 rounded flex items-center justify-center"
-                        onClick={(e) => e.stopPropagation()}
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /></svg>
-                      </a>
+                      </AttachmentLink>
                     )}
                   </td>
                 </tr>
@@ -1048,7 +1060,7 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
       {/* MODAL FORM */}
       <Modal
         isOpen={showForm}
-        onClose={() => setShowForm(false)}
+        onClose={closeForm}
         title={formData.id ? "Editar Lançamento" : (isBoletoView ? "Novo Boleto" : (isPayable ? "Nova Conta a Pagar" : "Nova Conta a Receber"))}
       >
         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1060,7 +1072,12 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
             autoFocus
           />
 
-          {isBoletoView && (
+          {isBoletoView && !canBoletos && (
+            <p className="md:col-span-2 text-xs text-wine-600 dark:text-slate-400">
+              Anexo disponível para o dono ou gerente, com os módulos Financeiro e Boletos ligados.
+            </p>
+          )}
+          {isBoletoView && canBoletos && (
             <div className="md:col-span-2">
               <label className="block text-xs font-bold text-wine-800 dark:text-wine-200 uppercase mb-1">
                 Arquivo do Boleto (PDF/Imagem)
@@ -1068,10 +1085,11 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
               <div className="flex items-center gap-2">
                 <input
                   type="file"
-                  accept=".pdf,.jpg,.jpeg,.png"
+                  accept={BOLETO_ACCEPT}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) handleFileUpload(file);
+                    e.target.value = '';
                   }}
                   className="hidden"
                   id="boleto-upload"
@@ -1093,15 +1111,16 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
 
                 {formData.attachmentUrl && (
                   <div className="flex items-center gap-2">
-                    <a
-                      href={formData.attachmentUrl}
-                      target="_blank"
-                      rel="noreferrer"
+                    <AttachmentLink
+                      attachment={formData.attachmentUrl}
+                      canAccess={canBoletos}
+                      title="Visualizar anexo"
+                      onError={m => addNotification(m, 'error')}
                       className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 underline bg-blue-50 px-2 py-1 rounded"
                     >
                       <FileText size={14} />
                       Visualizar
-                    </a>
+                    </AttachmentLink>
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, attachmentUrl: undefined })}
@@ -1276,7 +1295,7 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
             <option value="CARTAO_DEBITO">Cartão de Débito</option>
             <option value="CARTAO_CREDITO">Cartão de Crédito</option>
             <option value="TRANSFERENCIA">Transferência</option>
-            <option value="BOLETO">Boleto</option>
+            {(!hideBoleto || formData.paymentMethod === 'BOLETO') && <option value="BOLETO">Boleto</option>}
           </Select>
 
 
@@ -1342,7 +1361,7 @@ export const Financial: React.FC<{ type: 'PAYABLES' | 'RECEIVABLES' | 'BOLETOS' 
               </Button>
             )}
             <div className="flex gap-2 ml-auto">
-              <Button type="button" variant="outline" onClick={() => setShowForm(false)} disabled={isSaving}>Cancelar</Button>
+              <Button type="button" variant="outline" onClick={closeForm} disabled={isSaving}>Cancelar</Button>
               <Button type="submit" disabled={isSaving}>
                 {isSaving ? 'Salvando...' : 'Salvar'}
               </Button>

@@ -180,7 +180,17 @@ const AppContent: React.FC = () => {
   if (loading) return <LoadingScreen message="Carregando sistema..." />;
   if (!user) return window.location.hash === '#novo-login' ? <NovoLogin /> : <Login />;
   if (storeStatus === 'loading') return <LoadingScreen message="Carregando sua loja..." />;
-  if (storeStatus === 'no_store') return <NoStore />;
+  // Sem nenhuma loja (ex.: a última foi excluída), o dono do SaaS continua no painel de assinaturas.
+  if (storeStatus === 'no_store') {
+    if (!isPlatformAdmin) return <NoStore />;
+    return (
+      <div className="min-h-screen bg-wine-50 dark:bg-slate-900 p-4">
+        <DialogHost />
+        <div className="max-w-6xl mx-auto text-right mb-2"><button onClick={() => signOut()} className="text-sm underline text-wine-800 dark:text-slate-200">Sair</button></div>
+        <Suspense fallback={<LoadingScreen message="Carregando painel..." />}><AdminPanel /></Suspense>
+      </div>
+    );
+  }
   if (subscription && !subscription.accessOk) return <AccessExpired />;
   if (!isInitialized) return <LoadingScreen message="Carregando dados da loja..." />;
 

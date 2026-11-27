@@ -4,6 +4,7 @@ import { Button, Input } from './UI';
 import { Upload, Trash2, Loader2, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useStore } from '../contexts/StoreContext';
+import { storeFilePath } from '../lib/storagePath';
 
 interface ServiceConfigFormProps {
     item: Product & { cartQty?: number };
@@ -12,7 +13,7 @@ interface ServiceConfigFormProps {
 }
 
 export const ServiceConfigForm: React.FC<ServiceConfigFormProps> = ({ item, initialSpecs, onConfirm }) => {
-    const { isModuleEnabled } = useStore();
+    const { isModuleEnabled, activeStore } = useStore();
     // Ficha técnica detalhada (estofados/sob medida) só com o módulo contratado.
     const detailed = isModuleEnabled('custom_production');
     const [type, setType] = useState<'INTERNAL' | 'OUTSOURCED'>('INTERNAL');
@@ -94,18 +95,17 @@ export const ServiceConfigForm: React.FC<ServiceConfigFormProps> = ({ item, init
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0) return;
         const file = e.target.files[0];
-        const fileExt = file.name.split('.').pop();
-        const fileName = `os-ref-${Math.random().toString(36).substring(2)}.${fileExt}`;
 
         setIsUploading(true);
         try {
+            const filePath = storeFilePath(activeStore?.id, file.name, 'os-ref-');
             const { error: uploadError } = await supabase.storage
                 .from('products')
-                .upload(fileName, file);
+                .upload(filePath, file);
 
             if (uploadError) throw uploadError;
 
-            const { data } = supabase.storage.from('products').getPublicUrl(fileName);
+            const { data } = supabase.storage.from('products').getPublicUrl(filePath);
             setOsData(prev => ({ ...prev, visualReference: data.publicUrl }));
 
         } catch (error) {

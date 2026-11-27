@@ -5,6 +5,7 @@ import { supabase } from './lib/supabase';
 import { parseISO, formatISO, formatBrazilDateTime, isSameMonth, getUUID } from './lib/utils';
 import { useStore } from './contexts/StoreContext';
 import { sellerDiscountProblem } from './lib/discount';
+import { orphanedAttachment, removeBoletoFiles } from './lib/boletoStorage';
 
 interface AppState {
   currentView: AppView;
@@ -901,6 +902,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const todayStr = formatISO(new Date());
     const finalStatus = (t.status === 'PENDING' && t.dueDate < todayStr) ? 'LATE' : t.status;
     const ut = { ...t, status: finalStatus };
+    const previous = data.transactions.find((i: Transaction) => i.id === ut.id);
+    const orphan = orphanedAttachment(previous?.attachmentUrl, ut.attachmentUrl, ut.id, data.transactions);
 
     setData((prev: any) => ({ ...prev, transactions: prev.transactions.map((i: Transaction) => i.id === ut.id ? ut : i) }));
 
@@ -913,7 +916,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       date: ut.date,
       due_date: ut.dueDate,
       status: ut.status,
-      attachment_url: ut.attachmentUrl,
+      // null limpa o anexo removido na tela (undefined não seria enviado).
+      attachment_url: ut.attachmentUrl || null,
       account_type: ut.accountType || 'VARIABLE',
       installments_total: ut.installmentsTotal,
       current_installment: ut.currentInstallment,
@@ -939,12 +943,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addNotification('Aviso: Funcionalidade de conta fixa indisponível (Banco desatualizado).', 'info');
     } else if (error) {
       addNotification('Erro ao atualizar transação.', 'error');
+    } else if (orphan) {
+      await removeBoletoFiles([orphan]);
     }
   };
 
   const deleteTransaction = async (id: string) => {
+    const removed = data.transactions.find((t: Transaction) => t.id === id);
+    const orphan = orphanedAttachment(removed?.attachmentUrl, null, id, data.transactions);
     setData((prev: any) => ({ ...prev, transactions: prev.transactions.filter((t: Transaction) => t.id !== id) }));
-    await supabase.from('transactions').delete().eq('id', id);
+    const { error } = await supabase.from('transactions').delete().eq('id', id);
+    if (error) {
+      addNotification('Erro ao excluir transação.', 'error');
+      await refreshData(true);
+    } else if (orphan) {
+      await removeBoletoFiles([orphan]);
+    }
   };
 
   const addProduct = async (p: Product) => {
