@@ -305,7 +305,7 @@ GRANT EXECUTE ON FUNCTION public.admin_delete_store_status(uuid) TO authenticate
 GRANT EXECUTE ON FUNCTION public.admin_delete_store_preview(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_delete_store(uuid, text) TO authenticated;
 
--- A lista do painel deixa de mostrar lojas excluídas (corpo da 050 mais o filtro).
+-- A lista do painel deixa de mostrar lojas com exclusão concluída (corpo da 050 mais o filtro).
 CREATE OR REPLACE FUNCTION public.admin_list_stores(p_filters jsonb DEFAULT '{}'::jsonb, p_limit integer DEFAULT 50,
   p_after_key timestamptz DEFAULT NULL::timestamptz, p_after_id uuid DEFAULT NULL::uuid)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO '' AS $$
@@ -329,11 +329,14 @@ BEGIN
              WHERE m.store_id = st.id AND m.role = 'OWNER' ORDER BY m.created_at LIMIT 1) AS owner_email,
            COALESCE(sb.current_period_end, st.trial_ends_at, st.valid_until) AS fim,
            COALESCE(sb.current_period_end, st.trial_ends_at, st.valid_until, 'infinity'::timestamptz) AS chave,
-           st.trial_ends_at, st.valid_until, st.billing_mode, st.created_at
+           st.trial_ends_at, st.valid_until, st.billing_mode, st.created_at,
+           st.deleted_at IS NOT NULL AS exclusao_pendente
       FROM public.stores st
       LEFT JOIN public.subscriptions sb ON sb.store_id = st.id
       LEFT JOIN public.plans pl ON pl.key = sb.plan_id
-     WHERE st.deleted_at IS NULL
+     -- Excluída some da lista quando tudo terminou; enquanto restar arquivo ou login, aparece com exclusao_pendente.
+     WHERE (st.deleted_at IS NULL OR EXISTS (SELECT 1 FROM public.store_deletions d
+             WHERE d.store_id = st.id AND (d.storage_done_at IS NULL OR d.logins_done_at IS NULL)))
        AND (p_filters->>'status' IS NULL OR st.status = p_filters->>'status')
        AND (p_filters->>'plan' IS NULL OR sb.plan_id = p_filters->>'plan')
        AND (p_filters->>'em_teste' IS DISTINCT FROM 'true' OR st.status = 'trial')

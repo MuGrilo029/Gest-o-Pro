@@ -220,10 +220,13 @@ describe('exclusão', () => {
     expect(res.body).toMatchObject({ status: 'parcial', storage_remaining: 2, logins_remaining: 3, logins_deleted: 0 });
     expect(res.body.errors[0]).toMatch(/products/);
     expect(await loginExists(s.owner)).toBe(true);
+    const listed = async () => (await t.as<any>(admin, `SELECT admin_list_stores('{"q":"loja falha storage"}'::jsonb) r`))[0].r.items;
+    expect(await listed()).toMatchObject([{ id: s.id, name: s.name, exclusao_pendente: true }]);
     delete fn.faults.storageError;
     expect((await del(s.id, s.name)).body).toMatchObject({ status: 'concluida', files_removed: 2, logins_deleted: 3 });
     const [d] = await t.sql<any>('SELECT storage_done_at, logins_done_at FROM store_deletions WHERE store_id = $1', [s.id]);
     expect(d.storage_done_at && d.logins_done_at).toBeTruthy();
+    expect(await listed()).toEqual([]);
   });
 
   it('Storage que responde sucesso sem apagar: para sem laço infinito e fica parcial', async () => {
