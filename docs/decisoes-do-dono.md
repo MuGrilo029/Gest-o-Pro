@@ -112,9 +112,25 @@ Seguem pendentes: duração do trial, MFA, SSO e +tag, e-mail de colegas, dados 
 2. **Criação de loja pelo painel** deve funcionar sem deixar loja órfã nem duplicada.
 3. **Excluir loja** no painel, só admin da plataforma, apagando dados e arquivos, com confirmação forte. O dono exclui pelo botão; o time não exclui lojas existentes.
 
-**Aguardando o dono:** boletos nos planos 2 e 3 (como hoje) ou só no 2; destino dos logins na exclusão (recomendado: apagar os que só existem na loja) e confirmação pelo nome; se pode publicar sem nova pergunta. Publicação de função, migração e deploy **não aprovados**.
+**Ajustes decididos pelo dono (27/11, via Produto 2ad77cd0):**
+- Boletos nos planos 2 (Crescimento) e 3 (Avançado) — não só no 2.
+- Excluir loja apaga todos os logins da loja, inclusive quem também é dono de outra loja (ciente de que a outra loja fica sem dono).
+- Excluir loja apaga o aceite dos Termos junto com a loja (sem retenção).
+- Publicação aprovada após testes e revisão.
 
-## Riscos registrados por Segurança (sem mudar a decisão)
+**Aguardando o dono:** se pode publicar sem nova pergunta (respondido: sim, após testes/revisão). Outras perguntas pendentes continuam: duração do trial, MFA, SSO e +tag, e-mail de colegas, dados de demonstração, imagens (público ou link), CMV, domínio, razão social, CNPJ, número do WhatsApp. Publicação de função, migração e deploy **não aprovados** até a revisão da Segurança fechar a 066."
+
+## Decisões do dono (27/11, via Tonny Stark) — riscos do relatório de planos/módulos
+Não executar ainda: cada etapa pede aprovação do dono antes de aplicar. Incorporar ao plano.
+
+1. **Financeiro retroativo:** gerar lançamentos retroativos para vendas antigas feitas sem o módulo Financeiro (ex.: R$ 450 vendidos × R$ 0 lançados deve fechar).
+2. **Módulo desligado:** manter como está — só esconde a tela; a API continua gravando. Não bloquear no servidor.
+3. **Excluir venda:** cancelar com estorno, mantendo o histórico (não apagar de vez).
+4. **Venda sem saldo em loja sem Encomendas:** só avisar, não bloquear (saldo pode ficar negativo).
+5. **Boletos:** corrigir (a) tela, banco e painel divergem com override sem Financeiro; (b) bucket de anexos não existe; (c) página de vendas local desatualizada.
+6. **Prioridade:** atacar primeiro os riscos do relatório (sw.js, edição de venda, entregas, módulos), depois as pendências de lançamento.
+
+Pendências de lançamento (trial, MFA, SSO, e-mail de colegas, dados de demonstração, imagens, CMV, domínio, razão social, CNPJ, WhatsApp, cobrança) ficam para a próxima rodada.">
 - Senha de 8 caracteres sem números.
 - Senha provisória 12345678 — recomendação: troca obrigatória no primeiro acesso (não implementada sem confirmação).
 - Impersonação sem log e sem limite de tempo.
