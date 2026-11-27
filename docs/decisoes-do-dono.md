@@ -107,6 +107,13 @@ Seguem pendentes: duração do trial, MFA, SSO e +tag, e-mail de colegas, dados 
 - **Limite de desconto publicado (27/11):** aprovado pelo dono; migração 064 aplicada no `supabase-dev` (ver `APLICADAS.md`) e front publicado pela `main`. Backend f2b09ea (aprovado por S), front até c5603c3 (53b69f2 aprovado por E1; c5603c3 revisado por SD). Testes: tsc, build, Vitest 195/195, replay duplo, Playwright mock 30/30. Para depois: admin impersonando não vê o campo do limite (grava só pelo servidor).
 - **Bloqueado pelo dono:** e-mail completo dos colegas na equipe (decisão 32), `TERMS_URL` e número do WhatsApp, além das perguntas pendentes acima.
 
+## Decisões de 27/11 (via Produto), em implementação
+1. **Financeiro em todos os planos**, inclusive Início. Boletos continua fora do Início; Relatórios não muda. Sem lançamento retroativo (não pedido). Substitui, só para o Financeiro, a distribuição anterior de módulos.
+2. **Criação de loja pelo painel** deve funcionar sem deixar loja órfã nem duplicada.
+3. **Excluir loja** no painel, só admin da plataforma, apagando dados e arquivos, com confirmação forte. O dono exclui pelo botão; o time não exclui lojas existentes.
+
+**Aguardando o dono:** boletos nos planos 2 e 3 (como hoje) ou só no 2; destino dos logins na exclusão (recomendado: apagar os que só existem na loja) e confirmação pelo nome; se pode publicar sem nova pergunta. Publicação de função, migração e deploy **não aprovados**.
+
 ## Riscos registrados por Segurança (sem mudar a decisão)
 - Senha de 8 caracteres sem números.
 - Senha provisória 12345678 — recomendação: troca obrigatória no primeiro acesso (não implementada sem confirmação).
