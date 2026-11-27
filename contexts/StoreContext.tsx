@@ -4,6 +4,14 @@ import { useAuth } from './AuthContext';
 import { AppView } from '../types';
 import { applyBrandColor, normalizeHex } from '../lib/brand';
 import {
+  StoreMember,
+  createStoreMember,
+  listStoreMembers,
+  removeStoreMember,
+  setStoreMemberPassword,
+  updateStoreMember,
+} from '../lib/teamApi';
+import {
   MANAGER_ONLY_VIEWS,
   PLATFORM_ADMIN_VIEWS,
   MODULES,
@@ -24,14 +32,7 @@ export interface StoreSummary {
   permissions: AppView[];
 }
 
-export interface StoreMember {
-  userId: string;
-  email: string;
-  name: string;
-  role: StoreRole;
-  permissions: AppView[];
-  createdAt: string;
-}
+export type { StoreMember } from '../lib/teamApi';
 
 type StoreStatus = 'loading' | 'ready' | 'no_store';
 
@@ -47,35 +48,6 @@ export interface Subscription {
   accessOk: boolean;
 }
 
-export interface ClientRow {
-  storeId: string;
-  name: string;
-  contactEmail: string | null;
-  ownerEmail: string | null;
-  plan: string | null;
-  notes: string | null;
-  status: SubscriptionStatus;
-  effectiveStatus: SubscriptionStatus;
-  trialEndsAt: Date | null;
-  validUntil: Date | null;
-  modules: string[];
-  createdAt: string;
-}
-
-export interface CreateClientInput {
-  email: string;
-  storeName: string;
-  ownerName?: string;
-  /** Senha inicial (10+ caracteres, letras e números); vazio = o servidor gera. Só vale se o e-mail ainda não tiver conta. */
-  password?: string;
-  modules: ModuleKey[];
-  mode: 'trial' | 'paid';
-  hours?: number;
-  days?: number;
-  plan?: string;
-  notes?: string;
-}
-
 interface StoreContextValue {
   status: StoreStatus;
   /** true enquanto a migração 003 não foi aplicada: uma loja única, todos os módulos padrão. */
@@ -86,23 +58,19 @@ interface StoreContextValue {
   isManager: boolean;
   isPlatformAdmin: boolean;
   impersonatedStore: StoreSummary | null;
-  startImpersonation: (storeId: string) => Promise<void>;
+  /** Só o dono do SaaS (is_platform_admin). Sem limite de tempo e sem log (decisão 36). */
+  startImpersonation: (storeId: string, storeName?: string) => Promise<void>;
   stopImpersonation: () => Promise<void>;
   /** Cor da marca da loja ativa (#rrggbb) ou null = paleta padrão. */
   brandColor: string | null;
   setBrandColor: (hex: string | null) => Promise<void>;
   /** Assinatura da loja ativa (null no modo legado ou antes da migração 006). */
   subscription: Subscription | null;
-  adminListClients: () => Promise<ClientRow[]>;
-  adminCreateClient: (input: CreateClientInput) => Promise<{ storeId: string; accountCreated: boolean; temporaryPassword: string | null }>;
-  adminExtend: (storeId: string, amount: { hours?: number; days?: number }) => Promise<void>;
-  adminSetStatus: (storeId: string, status: SubscriptionStatus, opts?: { hours?: number; days?: number; unlimited?: boolean }) => Promise<void>;
   moduleStates: Record<ModuleKey, boolean>;
   isModuleEnabled: (key: ModuleKey) => boolean;
   canAccessView: (view: AppView) => boolean;
   switchStore: (storeId: string) => Promise<void>;
   createStore: (name: string, enabledModules?: ModuleKey[]) => Promise<string | null>;
-  setModuleEnabled: (key: ModuleKey, enabled: boolean, opts: { reason: string; expiresAt?: string }) => Promise<void>;
   listMembers: () => Promise<StoreMember[]>;
   /** Cria a conta (e-mail + senha) e coloca na loja ativa. Se o e-mail já tiver conta, só adiciona. */
   createMember: (input: { email: string; name: string; password: string; role: StoreRole; permissions: AppView[] }) => Promise<{ existingAccount: boolean; temporaryPassword: string | null }>;
@@ -298,23 +266,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return storeId;
   }, [legacyMode, reload]);
 
-  // Liga ou desliga um módulo pela RPC admin_set_module_override (admin-only, com motivo e validade).
-  // Módulos core não mudam. Dependências não são desligadas em cascata aqui: a confirmação é da tela.
-  const setModuleEnabled = useCallback(async (key: ModuleKey, enabled: boolean, opts: { reason: string; expiresAt?: string }) => {
-    if (legacyMode) throw new Error('Aplique a migração multi-loja para ligar e desligar módulos.');
-    if (!activeStoreId) return;
-    if (getModule(key).core) return;
-    const { error } = await supabase.rpc('admin_set_module_override', {
-      p_store: activeStoreId,
-      p_module: key,
-      p_action: enabled ? 'grant' : 'revoke',
-      p_reason: opts.reason,
-      p_expires_at: opts.expiresAt ?? null,
-    });
-    if (error) throw new Error(error.message);
-    await reload();
-  }, [legacyMode, activeStoreId, reload]);
-
   const requireStore = () => {
     if (legacyMode) throw new Error('Aplique a migração multi-loja para gerenciar a equipe.');
     if (!activeStoreId) throw new Error('Nenhuma loja selecionada.');
@@ -323,66 +274,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const listMembers = useCallback(async (): Promise<StoreMember[]> => {
     if (legacyMode || !activeStoreId) return [];
-    const { data, error } = await supabase.rpc('list_store_members', { p_store: activeStoreId });
-    if (error) throw new Error(error.message);
-    return (data || []).map((m: any) => ({
-      userId: m.user_id,
-      email: m.email,
-      name: m.name,
-      role: m.role,
-      permissions: m.permissions || [],
-      createdAt: m.created_at,
-    }));
+    return listStoreMembers(activeStoreId);
   }, [legacyMode, activeStoreId]);
 
-  /** Chama a Edge Function manage-users e devolve a mensagem de erro dela, se houver. */
-  const callManageUsers = async (body: Record<string, unknown>) => {
-    const { data, error } = await supabase.functions.invoke('manage-users', { body });
-    if (error) {
-      let message = error.message;
-      try {
-        const payload = await (error as any).context?.json?.();
-        if (payload?.error) message = payload.error;
-      } catch { /* resposta sem JSON */ }
-      throw new Error(message);
-    }
-    if (data?.error) throw new Error(data.error);
-    return data;
-  };
-
   const createMember = useCallback(async (input: { email: string; name: string; password: string; role: StoreRole; permissions: AppView[] }) => {
-    const storeId = requireStore();
-    const data = await callManageUsers({
-      action: 'create_member',
-      store_id: storeId,
-      email: input.email,
-      name: input.name,
-      password: input.password,
-      role: input.role,
-      permissions: input.role === 'SELLER' ? input.permissions : [],
-    });
-    return { existingAccount: !!data?.existing_account, temporaryPassword: (data?.temporary_password as string) || null };
+    return createStoreMember(requireStore(), input);
   }, [legacyMode, activeStoreId]);
 
   const setMemberPassword = useCallback(async (userId: string, password: string) => {
-    const storeId = requireStore();
-    const data = await callManageUsers({ action: 'set_password', store_id: storeId, user_id: userId, password });
-    return (data?.temporary_password as string) || null;
+    return setStoreMemberPassword(requireStore(), userId, password);
   }, [legacyMode, activeStoreId]);
 
   const updateMember = useCallback(async (userId: string, memberRole: StoreRole, permissions: AppView[]) => {
-    const storeId = requireStore();
-    const { error } = await supabase.rpc('update_store_member', {
-      p_store: storeId, p_user: userId, p_role: memberRole, p_permissions: permissions,
-    });
-    if (error) throw new Error(error.message);
+    await updateStoreMember(requireStore(), userId, memberRole, permissions);
     if (userId === user?.id) await reload();
   }, [legacyMode, activeStoreId, user, reload]);
 
   const removeMember = useCallback(async (userId: string) => {
-    const storeId = requireStore();
-    const { error } = await supabase.rpc('remove_store_member', { p_store: storeId, p_user: userId });
-    if (error) throw new Error(error.message);
+    await removeStoreMember(requireStore(), userId);
     if (userId === user?.id) await reload();
   }, [legacyMode, activeStoreId, user, reload]);
 
@@ -412,84 +321,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setBrandColorState(clean);
   }, [legacyMode, activeStoreId]);
 
-  const toDate = (v: string | null) => (v ? new Date(v) : null);
-
-  const adminListClients = useCallback(async (): Promise<ClientRow[]> => {
-    const { data, error } = await supabase.rpc('admin_list_clients');
-    if (error) throw new Error(error.message);
-    return (data || []).map((c: any) => ({
-      storeId: c.store_id,
-      name: c.name,
-      contactEmail: c.contact_email,
-      ownerEmail: c.owner_email,
-      plan: c.plan,
-      notes: c.notes,
-      status: c.status,
-      effectiveStatus: c.effective_status,
-      trialEndsAt: toDate(c.trial_ends_at),
-      validUntil: toDate(c.valid_until),
-      modules: c.modules || [],
-      createdAt: c.created_at,
-    }));
-  }, []);
-
-  const adminCreateClient = useCallback(async (input: CreateClientInput) => {
-    const { data, error } = await supabase.rpc('admin_create_client', {
-      p_email: input.email.trim(),
-      p_store_name: input.storeName.trim(),
-      p_modules: input.modules,
-      p_mode: input.mode,
-      p_hours: input.hours ?? null,
-      p_days: input.days ?? null,
-      p_plan: input.plan?.trim() || null,
-      p_notes: input.notes?.trim() || null,
-    });
-    if (error) throw new Error(error.message);
-    const row = Array.isArray(data) ? data[0] : data;
-    const storeId = row.store_id as string;
-    let accountCreated = false;
-    let temporaryPassword: string | null = null;
-    if (!row.account_exists) {
-      const created = await callManageUsers({
-        action: 'create_member',
-        store_id: storeId,
-        email: input.email.trim(),
-        name: input.ownerName?.trim() || input.storeName.trim(),
-        password: input.password || undefined,
-        role: 'OWNER',
-        permissions: [],
-      });
-      accountCreated = true;
-      temporaryPassword = (created?.temporary_password as string) || null;
-    }
-    return { storeId, accountCreated, temporaryPassword };
-  }, []);
-
-  const adminExtend = useCallback(async (storeId: string, amount: { hours?: number; days?: number }) => {
-    const { error } = await supabase.rpc('admin_extend', {
-      p_store: storeId, p_hours: amount.hours ?? null, p_days: amount.days ?? null,
-    });
-    if (error) throw new Error(error.message);
-  }, []);
-
-  const adminSetStatus = useCallback(async (
-    storeId: string, status: SubscriptionStatus, opts?: { hours?: number; days?: number; unlimited?: boolean },
-  ) => {
-    const { error } = await supabase.rpc('admin_set_status', {
-      p_store: storeId, p_status: status,
-      p_hours: opts?.hours ?? null, p_days: opts?.days ?? null, p_unlimited: !!opts?.unlimited,
-    });
-    if (error) throw new Error(error.message);
-  }, []);
-
-  const startImpersonation = useCallback(async (storeId: string) => {
+  const startImpersonation = useCallback(async (storeId: string, storeName?: string) => {
+    if (!isPlatformAdmin) throw new Error('Só o administrador da plataforma abre outra loja.');
     await switchStore(storeId);
-    const target = stores.find(s => s.id === storeId) || { id: storeId, name: 'Loja', role: 'OWNER', permissions: [] as AppView[] };
+    const known = stores.find(s => s.id === storeId);
+    const target: StoreSummary = known
+      ? { ...known, name: storeName || known.name }
+      : { id: storeId, name: storeName || 'Loja', role: 'OWNER', permissions: [] as AppView[] };
     setImpersonatedStore(target);
     if (typeof window !== 'undefined') {
       sessionStorage.setItem('GESTAO_PRO_IMPERSONATED_STORE', JSON.stringify(target));
     }
-  }, [stores, switchStore]);
+  }, [stores, switchStore, isPlatformAdmin]);
 
   const stopImpersonation = useCallback(async () => {
     setImpersonatedStore(null);
@@ -514,16 +357,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       brandColor,
       setBrandColor,
       subscription,
-      adminListClients,
-      adminCreateClient,
-      adminExtend,
-      adminSetStatus,
       moduleStates,
       isModuleEnabled,
       canAccessView,
       switchStore,
       createStore,
-      setModuleEnabled,
       listMembers,
       createMember,
       setMemberPassword,
