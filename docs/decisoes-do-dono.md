@@ -130,8 +130,20 @@ Não executar ainda: cada etapa pede aprovação do dono antes de aplicar. Incor
 5. **Boletos:** corrigir (a) tela, banco e painel divergem com override sem Financeiro; (b) bucket de anexos não existe; (c) página de vendas local desatualizada.
 6. **Prioridade:** atacar primeiro os riscos do relatório (sw.js, edição de venda, entregas, módulos), depois as pendências de lançamento.
 
-Pendências de lançamento (trial, MFA, SSO, e-mail de colegas, dados de demonstração, imagens, CMV, domínio, razão social, CNPJ, WhatsApp, cobrança) ficam para a próxima rodada.">
+## Riscos registrados por Segurança (sem mudar a decisão)
 - Senha de 8 caracteres sem números.
+- Senha provisória 12345678 — recomendação: troca obrigatória no primeiro acesso (não implementada sem confirmação).
+- Impersonação sem log e sem limite de tempo.
+- Exportação/anonimização LGPD fora do lançamento.
+- Chave publicável antiga do Supabase ficou no histórico do git (migração 001): recomenda-se rotacionar.
+
+## Decisões do dono (27/11, via Tonny Stark) — pendências de lançamento
+Incorporar como decisões; não executar até aprovação.
+
+1. **Pendências a fechar agora:** Trial, MFA e SSO. As demais (e-mail dos colegas, dados de demonstração, imagens públicas vs link, CMV, domínio, razão social, CNPJ, WhatsApp, cobrança) ficam para a próxima rodada.
+2. **Avançado = 6 vendedores** (confirma o que apareceu depois; "ilimitado" estava errado).
+3. **Trial = 7 dias com todos os módulos.** Trial não convertido guarda só o login do dono (052, já implementado).
+4. Prioridade continua: riscos do relatório (sw.js, edição de venda, entregas, módulos) primeiro; depois as pendências de lançamento (trial, MFA, SSO agora; o resto na próxima rodada).
 - Senha provisória 12345678 — recomendação: troca obrigatória no primeiro acesso (não implementada sem confirmação).
 - Impersonação sem log e sem limite de tempo.
 - Exportação/anonimização LGPD fora do lançamento.
