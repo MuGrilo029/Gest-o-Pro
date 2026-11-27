@@ -212,7 +212,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setStores(list);
 
     const { data: profile } = await supabase.from('profiles').select('is_platform_admin').eq('id', user.id).maybeSingle();
-    setIsPlatformAdmin(!!profile?.is_platform_admin);
+    const platformAdmin = profile?.is_platform_admin === true;
+    setIsPlatformAdmin(platformAdmin);
+    // Impersonação restaurada do sessionStorage só vale para o dono do SaaS (decisões 33 e 36).
+    if (!platformAdmin) {
+      setImpersonatedStore(null);
+      if (typeof window !== 'undefined') sessionStorage.removeItem('GESTAO_PRO_IMPERSONATED_STORE');
+    }
 
     if (list.length === 0) {
       setActiveStoreId(null);

@@ -54,4 +54,12 @@ describe('impersonação só para is_platform_admin (startImpersonation)', () =>
     expect(guard).toBeLessThan(body.indexOf('switchStore(storeId)'));
     expect(guard).toBeLessThan(body.indexOf('sessionStorage.setItem'));
   });
+
+  it('impersonação restaurada do sessionStorage é descartada para não-admin', () => {
+    const src = readFileSync(resolve(__dirname, '../contexts/StoreContext.tsx'), 'utf8');
+    const from = src.indexOf("select('is_platform_admin')");
+    const block = src.slice(from, from + 600);
+    expect(from).toBeGreaterThan(-1);
+    expect(block).toMatch(/if \(!platformAdmin\) \{[\s\S]*setImpersonatedStore\(null\)[\s\S]*sessionStorage\.removeItem\('GESTAO_PRO_IMPERSONATED_STORE'\)/);
+  });
 });

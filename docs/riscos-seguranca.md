@@ -53,7 +53,9 @@ Conferência em produção feita só por leitura em 27/11/2026 (projeto `yfyckre
 8. **GitHub**: Actions ligado e branch protection exigindo o job `CI` (após o push aprovado).
 
 ## Pendências desta entrega (27/11/2026)
-- **Estagiario1:** revisou `45045f5`; ajustes aplicados em `d2cdde3` (CSP, checksum do gitleaks, R3, A12, pen-test 4.2) e o teste de impersonação no commit seguinte. Falta a revisão desses dois commits.
+- **Estagiario1:** revisou `45045f5`, `d2cdde3` e `4879203`; ajustes aplicados, incluindo o descarte da impersonação restaurada para não-admin. Falta a revisão do último commit.
 - **Harness de RLS no PGlite (Backend):** ainda não entregue; pedido com os casos exigidos (isolamento A×B, DELETE do vendedor nas 9 tabelas e em `producao-anexos`, `admin_*` e `set_active_store` para não-admin, Storage `products` por pasta).
 - **Migrações 048+ (Backend):** ainda não existem na branch do Backend; revisão de isolamento, papéis, Storage `products` e sessões pendente. Nenhuma migração aplicada.
-- **Baixo (anotado):** a interface restaura `impersonatedStore` do `sessionStorage` sem checar o admin; só muda o aviso na tela, pois os dados passam pelo RLS (pen-test 2.7).
+- **Resolvido:** a impersonação restaurada do `sessionStorage` é descartada quando o perfil não é `is_platform_admin` (teste em `tests/platformAdminAccess.test.ts`).
+- **Baixo (aceito):** a imagem unsplash existe só nos dados de exemplo (`MOCK_DATA` em `store.tsx`); a CSP a bloqueia e o efeito é só uma imagem quebrada nesses exemplos.
+- **A12:** o SeniorDev decidiu tirar as fontes do Google e o quickchart.io (Frontend). Depois da entrega, a CSP fica só com self, `*.supabase.co` e `vercel.live`.
