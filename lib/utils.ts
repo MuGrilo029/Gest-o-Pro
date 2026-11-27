@@ -6,12 +6,16 @@
  * Converte uma string 'YYYY-MM-DD' ou ISO Timestamp em um objeto Date local (meia-noite).
  * Evita o problema onde '2023-10-25' vira '2023-10-24 21:00' devido ao GMT-3.
  */
-/** Mesma regra do servidor (manage-users): 10 a 72 caracteres, com letras e números. Vazio = o servidor gera. */
+/** Política de senha (decisão 42): 8 a 72 caracteres, sem exigir números. Mesma regra da Edge Function manage-users. Vazio = o servidor define. */
+export const PASSWORD_MIN = 8;
+export const PASSWORD_MAX = 72; // limite do bcrypt
+/** Senha provisória quando o admin da plataforma cria a conta (decisão 40). */
+export const DEFAULT_TEMP_PASSWORD = '12345678';
+
 export const passwordProblem = (p: string): string | null => {
   if (!p) return null;
-  if (p.length < 10) return 'A senha precisa ter pelo menos 10 caracteres.';
-  if (p.length > 72) return 'A senha pode ter no máximo 72 caracteres.';
-  if (!/[A-Za-z]/.test(p) || !/\d/.test(p)) return 'A senha precisa ter letras e números.';
+  if (p.length < PASSWORD_MIN) return `A senha precisa ter pelo menos ${PASSWORD_MIN} caracteres.`;
+  if (p.length > PASSWORD_MAX) return `A senha pode ter no máximo ${PASSWORD_MAX} caracteres.`;
   return null;
 };
 
