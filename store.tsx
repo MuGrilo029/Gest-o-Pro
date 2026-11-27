@@ -116,6 +116,9 @@ interface AppState {
 
 const AppContext = createContext<AppState | undefined>(undefined);
 
+/** Arredonda para centavos (o servidor confere valores com tolerância de 1 centavo). */
+const roundMoney = (v: number) => Math.round((Number(v) || 0) * 100) / 100;
+
 const STORAGE_KEY = 'COM_STILLO_DB_V1';
 const THEME_KEY = 'COM_STILLO_THEME';
 
@@ -498,12 +501,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // --- RECURRENCE CHECK FOR FIXED ACCOUNTS ---
   useEffect(() => {
-    if (isInitialized && data.transactions.length > 0) {
+    // isManager entra na dependência: se o papel chegar depois da carga, a recorrência roda para o dono/gerente.
+    if (isInitialized && isManager && data.transactions.length > 0) {
       checkRecurringFixedAccounts(data.transactions);
     }
-  }, [isInitialized]);
+  }, [isInitialized, isManager]);
 
   const checkRecurringFixedAccounts = async (currentTransactions: Transaction[]) => {
+    // Lançamentos recorrentes são do dono/gerente: o vendedor não insere em transactions (059).
+    if (!isManager) return;
     const today = new Date();
     const currentMonth = today.getMonth();
     const currentYear = today.getFullYear();
@@ -1079,303 +1085,116 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addNotification(`Entrada de ${quantity} unidades${selectedVariant ? ` da variação ${selectedVariant.name}` : ''} registrada com sucesso`, 'success');
   };
 
+  /**
+   * Venda nova numa única transação no banco (RPC create_sale, migração 059 do Backend).
+   * O servidor faz estoque, encomendas, OS, entregas e lançamentos conforme os módulos ligados;
+   * o front não repete nada disso. Vale para todos os papéis (o vendedor não tem mais INSERT direto).
+   */
   const addSale = async (s: Sale) => {
     if (!s.items || s.items.length === 0) {
       addNotification('Erro: Não é possível salvar uma venda sem itens.', 'error');
       return false;
     }
 
-    // Módulos ligados nesta loja. Cada automação abaixo só roda se o módulo
-    // dela estiver ligado; a venda em si nunca depende deles.
-    const useOrders = isModuleEnabled('orders');
-    const useFinancial = isModuleEnabled('financial');
-    const useProduction = isModuleEnabled('production');
-    const useDeliveries = isModuleEnabled('deliveries');
-
     // Sem o módulo de Entregas, toda venda é retirada na loja.
-    if (!useDeliveries && s.deliveryType === 'DELIVERY') {
+    if (!isModuleEnabled('deliveries') && s.deliveryType === 'DELIVERY') {
       s = { ...s, deliveryType: 'PICKUP' };
     }
 
+    // Valores no formato que o create_sale (060) confere: centavos, quantidade inteira > 0,
+    // total = subtotal − desconto, à vista sem entrada/restante, dividido com restante = total − entrada.
+    const qty = (i: SaleItem) => Number(i.quantity);
+    if (s.items.some(i => !Number.isInteger(qty(i)) || qty(i) <= 0)) {
+      addNotification('A quantidade de cada item deve ser maior que zero.', 'error');
+      return false;
+    }
+    const subtotal = s.items.reduce((acc, i) => acc + qty(i) * (Number(i.unitPrice) || 0), 0);
+    const discount = roundMoney(Number(s.discount) || 0);
+    if (discount < 0 || discount > roundMoney(subtotal)) {
+      addNotification(`O desconto deve ficar entre 0 e o subtotal (${roundMoney(subtotal).toFixed(2)}).`, 'error');
+      return false;
+    }
+    const total = roundMoney(subtotal - discount);
+    // A tela calcula o total; se divergir dos itens, mostra o erro em vez de corrigir em silêncio.
+    if (Math.abs((Number(s.total) || 0) - total) > 0.01) {
+      addNotification(`O total da venda não confere com os itens (calculado: ${total.toFixed(2)}).`, 'error');
+      return false;
+    }
+    const partial = s.paymentType === 'PARTIAL';
+    const downPayment = partial ? roundMoney(Math.min(Math.max(0, Number(s.downPayment) || 0), total)) : 0;
+    s = {
+      ...s,
+      discount,
+      total,
+      downPayment: partial ? downPayment : s.downPayment,
+      remainingAmount: partial ? roundMoney(total - downPayment) : 0,
+      cardFeeAmount: roundMoney(Number(s.cardFeeAmount) || 0),
+    };
+
     setData((prev: any) => ({ ...prev, sales: [...prev.sales, s] }));
 
-    // 1. Insert Sales Record
-    const { error } = await supabase.from('sales').insert({
+    const pSale = {
       id: s.id,
       customer_name: s.customerName,
       customer_phone: s.customerPhone,
       customer_address: s.customerAddress,
       delivery_type: s.deliveryType,
+      delivery_date: s.deliveryDate || null,
       date: s.date,
       total: s.total,
       discount: s.discount,
       payment_method: s.paymentMethod,
       down_payment_method: s.downPaymentMethod,
       remaining_payment_method: s.remainingPaymentMethod,
-      payment_type: s.paymentType,
-      down_payment: s.downPayment,
+      payment_type: partial ? 'PARTIAL' : 'FULL',
+      down_payment: partial ? downPayment : 0,
       remaining_amount: s.remainingAmount,
+      remaining_status: s.remainingStatus,
       status: s.status,
       observations: s.observations,
-      delivery_date: s.deliveryDate || null,
       card_fee_amount: s.cardFeeAmount || 0,
       card_fee_percentage: s.cardFeePercentage || 0,
-      card_installments: s.cardInstallments || 0
+      card_installments: s.cardInstallments || 0,
+    };
+
+    const pItems = s.items.map(i => {
+      // Item avulso não tem produto; produto do catálogo vai sempre com o id e o servidor confere a loja.
+      return {
+        product_id: i.productId || null,
+        product_name: i.productName || 'Item sem nome',
+        description: i.description,
+        quantity: qty(i),
+        unit_price: Number(i.unitPrice) || 0,
+        category: i.category || 'Geral',
+        service_type: i.serviceType,
+        service_specs: typeof i.serviceSpecs === 'object' ? JSON.stringify(i.serviceSpecs) : i.serviceSpecs,
+        color: i.color,
+        variant_id: i.variantId || null,
+        variant_name: i.variantName || null,
+        by_order: !!i.byOrder,
+      };
     });
 
+    const { error } = await supabase.rpc('create_sale', { p_sale: pSale, p_items: pItems });
     if (error) {
-      console.error('❌ STORE: Erro ao inserir cabeçalho da venda:', error);
+      console.error('❌ STORE: Erro ao criar venda (create_sale):', error);
       addNotification(`Erro ao criar venda: ${error.message}`, 'error');
-      // Rollback otimista
       setData((prev: any) => ({ ...prev, sales: prev.sales.filter((sale: Sale) => sale.id !== s.id) }));
       return false;
     }
 
-    if (!error) {
-      // 2. PREPARE ITEMS & STOCK LOGIC
-      // We process items first to determine their final state (byOrder or not)
-      const processedItems = [];
-      // Estado de estoque da própria venda: duas linhas do mesmo produto não podem sobrescrever uma à outra
-      const stockWorking = new Map<string, Product>();
-
-      for (const item of s.items) {
-        // Clone item to avoid mutation issues
-        const processingItem = { ...item };
-
-        if (processingItem.category !== 'Serviços' && processingItem.serviceType !== 'INTERNAL') {
-          const product = stockWorking.get(processingItem.productId) ?? data.products.find((p: Product) => p.id === processingItem.productId);
-
-          if (product) {
-            // 2A. Auto-detect "Encomenda" if stock is 0 or less
-            // FORCE byOrder to true if stock is insufficient
-            // Sem o módulo de Encomendas, o item sai do estoque normalmente.
-            if (!useOrders) {
-              processingItem.byOrder = false;
-            } else if (product.quantity <= 0) {
-              processingItem.byOrder = true;
-            }
-
-            // 2B. Handle Logic based on byOrder status
-            if (processingItem.byOrder) {
-              // Create Order
-              const newOrder: Order = {
-                id: getUUID(),
-                saleId: s.id,
-                productId: processingItem.productId,
-                customerName: s.customerName,
-                productName: processingItem.productName,
-                quantity: processingItem.quantity,
-                date: s.date,
-                status: 'PENDING',
-                notes: `Encomenda de Venda #${s.id.slice(0, 4)}`
-              };
-              await addOrder(newOrder);
-            } else {
-              // Reduce Stock
-              const newQty = product.quantity - processingItem.quantity;
-              let updatedVariants = product.variants;
-              if (processingItem.variantId && product.variants && product.variants.length > 0) {
-                updatedVariants = product.variants.map((v: ProductVariant) => {
-                  if (v.id === processingItem.variantId) {
-                    return { ...v, quantity: Math.max(0, v.quantity - processingItem.quantity) };
-                  }
-                  return v;
-                });
-              }
-
-              const updatedProduct: Product = { ...product, quantity: newQty, variants: updatedVariants };
-              stockWorking.set(processingItem.productId, updatedProduct);
-              await updateProduct(updatedProduct);
-
-              addStockMovement({
-                id: getUUID(),
-                productId: processingItem.productId,
-                productName: `${processingItem.productName}${processingItem.variantName ? ` (${processingItem.variantName})` : ''}`,
-                quantity: -processingItem.quantity,
-                type: 'SALE',
-                date: s.date,
-                observations: `Venda #${s.id.slice(0, 4)}`
-              });
-            }
-          }
-        }
-        processedItems.push(processingItem);
-      }
-
-      // 3. Insert Sale Items
-      console.log('📦 STORE: Preparando itens para inserção:', processedItems);
-
-      const itemsToInsert = processedItems.map(i => {
-        const productExists = data.products.some((p: Product) => p.id === i.productId);
-        // Clean log: Only warn if it's NOT a custom item (meaning it should have an ID but doesn't)
-        if (!i.productId && i.category !== 'Personalizado') {
-          console.warn('⚠️ STORE: Item sem productId detectado (pode ser item avulso ou erro):', i.productName);
-        }
-
-        return {
-          sale_id: s.id,
-          product_id: (i.productId && productExists) ? i.productId : null,
-          product_name: i.productName || 'Item sem nome',
-          description: i.description,
-          quantity: i.quantity || 1,
-          unit_price: i.unitPrice || 0,
-          category: i.category || 'Geral',
-          service_type: i.serviceType,
-          service_specs: typeof i.serviceSpecs === 'object' ? JSON.stringify(i.serviceSpecs) : i.serviceSpecs,
-          color: i.color,
-                    variant_id: i.variantId || null,
-                    variant_name: i.variantName || null,
-          by_order: i.byOrder
-        };
-      });
-
-      console.log(`📦 STORE: Enviando ${itemsToInsert.length} itens para o Supabase...`, itemsToInsert);
-      const { data: insertedItems, error: itemsError } = await supabase.from('sale_items').insert(itemsToInsert).select();
-
-      if (itemsError) {
-        console.error('❌ STORE: Erro ao inserir itens da venda:', itemsError);
-        addNotification(`Erro nos itens da venda: ${itemsError.message}`, 'error');
-      } else {
-        console.log('✅ STORE: Itens da venda inseridos com sucesso:', insertedItems);
-        addNotification('Venda finalizada com sucesso', 'success');
-      }
-
-      // 3. FINANCIAL INTEGRATION (Auto-Transactions) — só com o módulo Financeiro
-      if (useFinancial && s.cardFeeAmount && s.cardFeeAmount > 0) {
-        const feeTrans: Transaction = {
-          id: getUUID(),
-          description: `Taxa de Cartão Venda #${s.id.slice(0, 4)}`,
-          amount: s.cardFeeAmount,
-          type: 'EXPENSE',
-          category: 'Taxas e Impostos',
-          date: s.date,
-          dueDate: s.date,
-          status: 'PAID',
-          saleId: s.id,
-          paymentMethod: s.paymentMethod
-        };
-        await addTransaction(feeTrans);
-      }
-
-      if (!useFinancial) {
-        // Sem Financeiro: a venda guarda a forma de pagamento, mas não gera lançamentos.
-      } else if (s.downPayment && s.downPayment > 0) {
-        const downTrans: Transaction = {
-          id: getUUID(),
-          description: `Entrada Venda #${s.id.slice(0, 4)} - ${s.customerName}`,
-          amount: s.downPayment,
-          type: 'INCOME',
-          category: 'Vendas',
-          date: s.date,
-          dueDate: s.date,
-          status: 'PAID',
-          saleId: s.id,
-          paymentMethod: s.downPaymentMethod || s.paymentMethod
-        };
-        await addTransaction(downTrans);
-      } else if (s.paymentType === 'FULL') {
-        const fullTrans: Transaction = {
-          id: getUUID(),
-          description: `Venda #${s.id.slice(0, 4)} - ${s.customerName}`,
-          amount: s.total,
-          type: 'INCOME',
-          category: 'Vendas',
-          date: s.date,
-          dueDate: s.date,
-          status: 'PAID',
-          saleId: s.id,
-          paymentMethod: s.paymentMethod
-        };
-        await addTransaction(fullTrans);
-      }
-
-      if (useFinancial && s.paymentType === 'PARTIAL' && s.remainingAmount && s.remainingAmount > 0) {
-        const status = s.remainingStatus === 'PAID' ? 'PAID' : 'PENDING';
-        const remTrans: Transaction = {
-          id: getUUID(),
-          description: `Restante Venda #${s.id.slice(0, 4)} - ${s.customerName}`,
-          amount: s.remainingAmount,
-          type: 'INCOME',
-          category: 'Vendas',
-          date: s.date,
-          dueDate: s.deliveryDate || s.date,
-          status: status,
-          saleId: s.id,
-          paymentMethod: s.remainingPaymentMethod || s.paymentMethod
-        };
-        await addTransaction(remTrans);
-      }
-
-
-
-      // --- NEW LOGIC: Create Delivery or Production Order ---
-      let hasProduction = false;
-
-      // Sem o módulo de Produção, serviços não geram OS e seguem como itens prontos.
-      const goesToProduction = (i: SaleItem) =>
-        useProduction && (i.category === 'Serviços' || i.serviceType === 'INTERNAL');
-
-      for (const item of s.items) {
-        if (goesToProduction(item)) {
-          hasProduction = true;
-          // Create Production Order
-          const prodOrder: ProductionOrder = {
-            id: getUUID(),
-            saleId: s.id,
-            customerName: s.customerName,
-            customerPhone: s.customerPhone,
-            customerAddress: s.customerAddress,
-            itemName: item.productName,
-            specs: item.serviceSpecs || '',
-            quantity: item.quantity,
-            date: formatISO(new Date()),
-            status: 'PENDING'
-          };
-          await addProductionOrder(prodOrder);
-        }
-      }
-
-      // If it's a delivery sale, create delivery ONLY for items that are ready (In Stock)
-      // Services go to Production -> Delivery (on Complete)
-      // Out of Stock go to Orders -> Delivery (on Receive)
-      if (useDeliveries && s.deliveryType === 'DELIVERY') {
-        const readyItems = processedItems.filter(i => {
-          const isService = goesToProduction(i);
-          const isMsg = i.byOrder; // If it was marked as byOrder, it's not ready
-          return !isService && !isMsg;
-        });
-
-        if (readyItems.length > 0) {
-          // Formata detalhes APENAS dos itens prontos
-          const itemDetails = readyItems.map(i => {
-            let line = `${i.quantity}x ${i.productName}`;
-            if (i.serviceSpecs) {
-              const readable = formatSpecsForDelivery(i.serviceSpecs);
-              line += `\n   » ${readable}`;
-            }
-            return line;
-          }).join('\n');
-
-          const delivery: Delivery = {
-            id: getUUID(),
-            customerName: s.customerName,
-            address: s.customerAddress || 'Endereço não informado',
-            date: s.deliveryDate || s.date,
-            status: 'PENDING',
-            saleId: s.id,
-            notes: `${itemDetails}`,
-            origin: 'SALES'
-          };
-          await addDelivery(delivery);
-        }
-      }
-
-      return true;
-    }
-    return false;
+    addNotification('Venda finalizada com sucesso', 'success');
+    // Estoque, encomendas, OS, entregas e lançamentos foram gerados no servidor: recarrega sem tela de carga.
+    await refreshData(true);
+    return true;
   };
 
   const updateSale = async (s: Sale) => {
+    // Edição de venda é do dono/gerente: edit_sale_items (058) e o gatilho da 059 recusam o vendedor.
+    if (!isManager) {
+      addNotification('Só o dono ou o gerente altera uma venda.', 'error');
+      return false;
+    }
     if (!s.items || s.items.length === 0) {
       addNotification('Erro: Não é possível atualizar uma venda removendo todos os itens.', 'error');
       return false;
@@ -1469,89 +1288,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   };
 
+  /**
+   * Exclusão de venda numa transação só no servidor (RPC delete_sale, migração 063):
+   * devolve o estoque, grava o estorno e apaga lançamentos, itens, OS, entregas, encomendas e a venda.
+   * Nada é apagado nem devolvido no cliente; o estado local só muda depois do sucesso (recarga).
+   */
   const deleteSale = async (id: string) => {
-    // O banco só permite que dono/gerente exclua vendas. Barrar aqui evita
-    // devolver o estoque de uma venda que o banco não vai apagar.
     if (!isManager) {
       addNotification('Apenas dono ou gerente pode excluir vendas.', 'error');
       return;
     }
-    console.log('📦 STORE: Iniciando exclusão definitiva no banco:', id);
-    try {
-      // 0. FETCH ITEMS TO RESTORE STOCK (Before Deletion)
-      const { data: saleItems } = await supabase.from('sale_items').select('*').eq('sale_id', id);
-
-      if (saleItems) {
-        const stockWorking = new Map<string, Product>();
-        for (const item of saleItems) {
-          // Restore stock ONLY if it was NOT made to order (i.e. taken from stock)
-          if (!item.by_order && item.product_id) {
-            const product = stockWorking.get(item.product_id) ?? data.products.find((p: Product) => p.id === item.product_id);
-            if (product) {
-              const restoredVariants = item.variant_id && product.variants
-                ? product.variants.map(v => v.id === item.variant_id
-                  ? { ...v, quantity: v.quantity + item.quantity }
-                  : v)
-                : product.variants;
-              const restoredProduct: Product = {
-                ...product,
-                quantity: product.quantity + item.quantity,
-                variants: restoredVariants
-              };
-              stockWorking.set(item.product_id, restoredProduct);
-              await updateProduct(restoredProduct);
-              // Log return
-              addStockMovement({
-                id: getUUID(),
-                productId: item.product_id,
-                productName: item.product_name,
-                quantity: item.quantity, // Positive for return
-                type: 'RETURN',
-                date: formatBrazilDateTime(),
-                variantId: item.variant_id,
-                variantName: item.variant_name,
-                observations: `Estorno de Venda EXCLUÍDA #${id.slice(0, 4)}${item.variant_name ? ` - ${item.variant_name}` : ''}`
-              });
-            }
-          }
-        }
-      }
-
-      // 1. Limpeza agressiva no estado local para feedback imediato
-      setData((prev: any) => ({
-        ...prev,
-        sales: prev.sales.filter((s: Sale) => s.id !== id),
-        productionOrders: (prev.productionOrders || []).filter((o: ProductionOrder) => o.saleId !== id),
-        deliveries: (prev.deliveries || []).filter((d: Delivery) => d.saleId !== id),
-        orders: (prev.orders || []).filter((o: Order) => o.saleId !== id),
-        // Filter transactions for immediate UI update (matches description pattern)
-        transactions: prev.transactions.filter((t: Transaction) => !t.description.includes(id.slice(0, 4)))
-      }));
-
-      // 2. Remoção no Supabase
-      // Clean up linked transactions (using description pattern matching as fallback for now)
-      // Note: Ideal would be a sale_id column in transactions, but description match works for generated ones.
-      const { error: transError } = await supabase.from('transactions').delete().ilike('description', `%Venda #${id.slice(0, 4)}%`);
-      if (transError) console.error('Erro ao excluir transações vinculadas:', transError);
-
-      await supabase.from('sale_items').delete().eq('sale_id', id);
-      await supabase.from('production_orders').delete().eq('sale_id', id);
-      await supabase.from('deliveries').delete().eq('sale_id', id);
-      await supabase.from('orders').delete().eq('sale_id', id); // Remove linked Encomendas
-
-      const { error } = await supabase.from('sales').delete().eq('id', id);
-
-      if (error) {
-        console.error('❌ STORE: Erro ao deletar do Supabase:', error);
-        addNotification(`Erro no banco: ${error.message}`, 'error');
-      } else {
-        console.log('✅ STORE: Venda removida com sucesso!');
-        addNotification('Venda e produtos devolvidos ao estoque (se aplicável).', 'info');
-      }
-    } catch (err: any) {
-      console.error('⚠️ STORE: Falha crítica na exclusão:', err);
-      addNotification('Erro ao processar exclusão', 'error');
+    const { error } = await supabase.rpc('delete_sale', { p_sale_id: id });
+    if (error) {
+      console.error('❌ STORE: Erro ao excluir venda (delete_sale):', error);
+      addNotification(`Erro ao excluir venda: ${error.message}`, 'error');
+      return;
     }
+    await refreshData(true);
+    addNotification('Venda excluída e produtos devolvidos ao estoque (se aplicável).', 'info');
   };
 
   const addStockMovement = async (m: StockMovement) => {

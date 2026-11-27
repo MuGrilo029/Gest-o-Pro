@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Order } from '../types';
 import { getUUID, formatISO } from '../lib/utils';
+import { ManagerOnly } from '../components/ManagerOnly';
 
 interface OrderGroup {
     saleId: string;
@@ -328,6 +329,7 @@ export const Orders: React.FC = () => {
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-3">
+                                            <ManagerOnly>
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -338,6 +340,7 @@ export const Orders: React.FC = () => {
                                             >
                                                 <Trash2 size={16} />
                                             </button>
+                                            </ManagerOnly>
                                             <ChevronRight size={18} className="text-wine-200" />
                                         </div>
                                     </div>
@@ -396,6 +399,7 @@ export const Orders: React.FC = () => {
                                             <CheckCircle size={16} />
                                             <span className="text-[10px] font-bold text-center">Chegou</span>
                                         </button>
+                                        <ManagerOnly>
                                         <button
                                             onClick={async () => {
                                                 if (await confirmDialog('Tem certeza que deseja remover ESTE item da encomenda?')) {
@@ -408,18 +412,21 @@ export const Orders: React.FC = () => {
                                             <XCircle size={16} />
                                             <span className="text-[10px] font-bold text-center">Excluir</span>
                                         </button>
+                                        </ManagerOnly>
                                     </div>
                                 </div>
                             ))}
                         </div>
 
                         <div className="flex justify-between items-center pt-4 border-t border-wine-100 dark:border-slate-700">
+                            <ManagerOnly>
                             <button
                                 onClick={() => handleDeleteGroup(activeGroup)}
                                 className="text-red-500 text-xs font-bold hover:underline"
                             >
                                 Remover Toda a Encomenda
                             </button>
+                            </ManagerOnly>
                             <Button onClick={() => setShowStatusModal(false)}>Fechar</Button>
                         </div>
                     </div>

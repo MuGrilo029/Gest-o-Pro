@@ -5,6 +5,7 @@ import { Card, Button, Modal, Input, Badge, confirmDialog } from '../components/
 import { Truck, MapPin, Phone, Clock, Calendar, CheckCircle, Navigation, Edit2, MessageCircle, Printer, FileText, Trash2, Kanban, RotateCcw } from 'lucide-react';
 import { Delivery } from '../types';
 import { formatISO, formatCurrency } from '../lib/utils';
+import { ManagerOnly } from '../components/ManagerOnly';
 
 const getWhatsAppLink = (notes?: string) => {
   const phoneMatch = notes?.match(/\(\d{2}\)\s\d{4,5}-\d{4}/);
@@ -71,18 +72,7 @@ const PrintableReceipt: React.FC<{ delivery: Delivery; company: any }> = ({ deli
             <p className="text-[8px]">Recebido em: ____/____/____  RG/CPF: ____________</p>
           </div>
         </div>
-      ) : (
-        <div className="mt-4 pt-4 border-t border-dashed border-wine-300 flex flex-col items-center justify-center flex-1">
-          <p className="text-[11px] font-bold text-wine-900 uppercase mb-4">Sua opinião é muito importante para nós!</p>
-          <div className="bg-white p-2 border-2 border-wine-200 rounded-xl shadow-sm">
-            <img
-              src={`https://quickchart.io/qr?text=${encodeURIComponent('https://g.page/r/CcDa5AQjP8cvEAE/review')}&size=120&margin=1&ecLevel=H`}
-              alt="QR Code"
-              className="w-32 h-32"
-            />
-          </div>
-        </div>
-      )}
+      ) : null /* QR de avaliação removido: o link fixo era de uma loja só (decisão do SeniorDev; virar campo da loja depois do lançamento). */}
 
       <div className="absolute top-2 right-2 opacity-10 transform rotate-12 pointer-events-none">
         <Truck size={40} />
@@ -227,6 +217,7 @@ const DeliveryCard: React.FC<{ delivery: Delivery; onEdit: (d: Delivery) => void
           >
             <Edit2 size={18} />
           </button>
+          <ManagerOnly>
           <button
             onClick={async () => {
               if (await confirmDialog('Deseja excluir esta entrega?')) {
@@ -238,6 +229,7 @@ const DeliveryCard: React.FC<{ delivery: Delivery; onEdit: (d: Delivery) => void
           >
             <Trash2 size={18} />
           </button>
+          </ManagerOnly>
           {delivery.status === 'IN_ROUTE' && (
             <button
               onClick={() => onPrint(delivery)}

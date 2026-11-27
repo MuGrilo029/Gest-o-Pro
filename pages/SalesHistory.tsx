@@ -26,6 +26,7 @@ import {
 import { Sale, SaleItem, Product } from '../types';
 import { parseISO, isInRange as utilsIsInRange } from '../lib/utils';
 import { SalePrintTemplate } from '../components/SalePrintTemplate';
+import { ManagerOnly } from '../components/ManagerOnly';
 
 
 export const SalesHistory: React.FC = () => {
@@ -260,13 +261,17 @@ export const SalesHistory: React.FC = () => {
                                             >
                                                 <Eye size={16} />
                                             </button>
+                                            {/* Editar venda: só dono/gerente (edit_sale_items e o gatilho da 059 recusam o vendedor). */}
+                                            <ManagerOnly>
                                             <button
                                                 onClick={() => handleEditSale(sale)}
                                                 className="p-2 hover:bg-blue-100 dark:hover:bg-slate-600 rounded-lg text-blue-600 transition-colors"
                                                 title="Editar"
+                                                aria-label="Editar venda"
                                             >
                                                 <Edit size={16} />
                                             </button>
+                                            </ManagerOnly>
                                             <button
                                                 onClick={() => handlePrintQuick(sale)}
                                                 className="p-2 hover:bg-gray-100 dark:hover:bg-slate-600 rounded-lg text-gray-600 transition-colors"
@@ -274,6 +279,7 @@ export const SalesHistory: React.FC = () => {
                                             >
                                                 <Printer size={16} />
                                             </button>
+                                            <ManagerOnly>
                                             <button
                                                 onClick={() => setShowDeleteModal(sale.id)}
                                                 className="p-2 hover:bg-red-100 dark:hover:bg-slate-600 rounded-lg text-red-600 transition-colors"
@@ -281,6 +287,7 @@ export const SalesHistory: React.FC = () => {
                                             >
                                                 <Trash2 size={16} />
                                             </button>
+                                            </ManagerOnly>
                                         </div>
                                     </td>
                                 </tr>
@@ -389,9 +396,11 @@ export const SalesHistory: React.FC = () => {
 
                         <div className="flex justify-end gap-2 pt-4">
                             <Button variant="outline" onClick={() => setViewingSale(null)}>Fechar</Button>
+                            <ManagerOnly>
                             <Button onClick={() => { setViewingSale(null); handleEditSale(viewingSale); }} className="gap-2">
                                 <Edit size={16} /> Editar Venda
                             </Button>
+                            </ManagerOnly>
                         </div>
                     </div>
                 </Modal>

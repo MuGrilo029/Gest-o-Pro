@@ -199,7 +199,6 @@ export const MODULES: ModuleDefinition[] = [
     views: [
       { view: 'SETTINGS', label: 'Configurações', inMenu: true },
       { view: 'TEAM', label: 'Equipe', inMenu: true },
-      { view: 'STORE_ADMIN', label: 'Administração (Lojas)', inMenu: true },
     ],
   },
 ];
@@ -219,8 +218,8 @@ export const ROLE_LABELS: Record<StoreRole, string> = {
 };
 
 /**
- * Telas só do administrador da plataforma (o desenvolvedor): criar lojas,
- * ligar módulos e montar equipes. Dono e gerente de loja não acessam.
+ * Telas só do administrador da plataforma (o dono do SaaS, is_platform_admin): o painel de assinaturas.
+ * Não existe papel de suporte (decisão 33). Dono, gerente e vendedor de loja não acessam.
  */
 export const PLATFORM_ADMIN_VIEWS: AppView[] = ['STORE_ADMIN'];
 

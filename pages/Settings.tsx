@@ -73,12 +73,6 @@ const ADMIN_HIDDEN_TABS = ['GENERAL', 'CATEGORIES', 'ORDERS', 'FEES', 'IMPORT_EX
 
   // --- Import / Export State ---
   const store = useAppStore();
-  const [importModule, setImportModule] = useState('products');
-  const [rawPreviewData, setRawPreviewData] = useState<any[]>([]);
-  const [processedData, setProcessedData] = useState<any[]>([]);
-  const [file, setFile] = useState<File | null>(null);
-  const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
-  const [isLoadingImport, setIsLoadingImport] = useState(false);
   const [feeForm, setFeeForm] = useState<Partial<CardFee>>({ installments: 0, percentage: 0 });
   const [isSavingFee, setIsSavingFee] = useState(false);
 
@@ -90,166 +84,6 @@ const ADMIN_HIDDEN_TABS = ['GENERAL', 'CATEGORIES', 'ORDERS', 'FEES', 'IMPORT_EX
     { id: 'receivables', name: 'Contas a Receber (Financeiro)' },
     { id: 'sales', name: 'Histórico de Vendas' },
   ];
-
-  const cleanString = (str: string) => str?.toString().trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "";
-
-  const parseCurrency = (value: any): number => {
-    if (typeof value === 'number') return value;
-    if (typeof value === 'string') {
-      const clean = value.replace(/[R$\s]/g, '').replace('.', '').replace(',', '.');
-      return parseFloat(clean) || 0;
-    }
-    return 0;
-  };
-
-  const parseDate = (value: any): string => {
-    if (!value) return formatISO(new Date());
-    if (typeof value === 'number') {
-      const date = new Date((value - (25567 + 2)) * 86400 * 1000);
-      return date.toISOString().split('T')[0];
-    }
-    if (typeof value === 'string' && value.includes('/')) {
-      const parts = value.split('/');
-      if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
-    }
-    return formatISO(new Date(value)) || formatISO(new Date());
-  };
-
-  const processImportData = (data: any[], type: string) => {
-    return data.map(row => {
-      const newItem: any = { id: getUUID() };
-      const rowNormalized: { [key: string]: any } = {};
-      Object.keys(row).forEach(key => {
-        rowNormalized[cleanString(key)] = row[key];
-      });
-
-      const findValue = (synonyms: string[]) => {
-        for (const syn of synonyms) {
-          const foundKey = Object.keys(rowNormalized).find(k => k.includes(syn));
-          if (foundKey) return rowNormalized[foundKey];
-        }
-        return null;
-      };
-
-      if (type === 'products') {
-        newItem.name = findValue(['nome', 'produto', 'descricao', 'item']) || 'Produto sem nome';
-        newItem.sku = findValue(['sku', 'codigo', 'ref', 'id']) || 'N/A';
-        newItem.price = parseCurrency(findValue(['preco', 'venda', 'valor', 'unitario']));
-        newItem.cost = parseCurrency(findValue(['custo', 'compra']));
-        newItem.quantity = parseInt(findValue(['qtd', 'quantidade', 'estoque']) || '0');
-        newItem.minStock = parseInt(findValue(['min', 'minimo']) || '5');
-        newItem.category = findValue(['categoria', 'grupo', 'tipo']) || 'Geral';
-        newItem.entryDate = parseDate(findValue(['entrada', 'data'])) || formatISO(new Date());
-      } else if (type === 'customers' || type === 'suppliers') {
-        newItem.name = findValue(['nome', 'cliente', 'fornecedor', 'razao', 'empresa']) || 'Sem Nome';
-        newItem.cpfCnpj = findValue(['cpf', 'cnpj', 'doc', 'federal']) || '';
-        newItem.phone = findValue(['tel', 'cel', 'fone', 'contato']) || '';
-        newItem.email = findValue(['email', 'correio']) || '';
-        newItem.address = findValue(['end', 'rua', 'logradouro', 'cidade']) || '';
-        if (type === 'suppliers') {
-          newItem.companyName = findValue(['razao', 'empresa']) || newItem.name;
-          newItem.contact = newItem.phone;
-        }
-      } else if (type === 'payables' || type === 'receivables') {
-        newItem.description = findValue(['desc', 'historico', 'nome', 'titulo']) || (type === 'payables' ? 'Conta a Pagar' : 'Recebimento');
-        newItem.amount = parseCurrency(findValue(['valor', 'total', 'pagar', 'receber']));
-        newItem.dueDate = parseDate(findValue(['vencimento', 'vencto', 'prazo']));
-        newItem.date = parseDate(findValue(['data', 'emissao', 'lançamento']) || newItem.dueDate);
-        newItem.category = findValue(['cat', 'classificacao']) || 'Geral';
-        newItem.type = type === 'payables' ? 'EXPENSE' : 'INCOME';
-        const statusRaw = findValue(['status', 'situacao']);
-        if (statusRaw && cleanString(statusRaw).includes('pago')) newItem.status = 'PAID';
-        else if (statusRaw && cleanString(statusRaw).includes('recebido')) newItem.status = 'PAID';
-        else newItem.status = 'PENDING';
-      } else if (type === 'sales') {
-        newItem.customerName = findValue(['cliente', 'nome']) || 'Consumidor Final';
-        newItem.date = parseDate(findValue(['data', 'emissao']));
-        newItem.total = parseCurrency(findValue(['total', 'valor', 'final']));
-        newItem.status = 'COMPLETED';
-        newItem.paymentMethod = findValue(['pagamento', 'forma', 'metodo']) || 'Dinheiro';
-        newItem.paymentType = 'FULL';
-        newItem.deliveryType = 'PICKUP';
-        newItem.items = [];
-      }
-      return newItem;
-    });
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (!selectedFile) return;
-    setImportMessage(null);
-    setRawPreviewData([]);
-    setProcessedData([]);
-
-    // Limites contra arquivos maliciosos ou gigantes.
-    const lowerName = selectedFile.name.toLowerCase();
-    if (!['.xlsx', '.csv'].some(ext => lowerName.endsWith(ext))) {
-      setFile(null);
-      setImportMessage({ type: 'error', text: 'Formato não aceito. Envie um arquivo .xlsx ou .csv.' });
-      e.target.value = '';
-      return;
-    }
-    if (selectedFile.size > 5 * 1024 * 1024) {
-      setFile(null);
-      setImportMessage({ type: 'error', text: 'Arquivo muito grande. O limite é de 5 MB.' });
-      e.target.value = '';
-      return;
-    }
-    setFile(selectedFile);
-
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const XLSX = await import('xlsx'); // carregado só quando importa
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const jsonData = XLSX.utils.sheet_to_json(ws);
-        if (jsonData.length > 20000) {
-          setImportMessage({ type: 'error', text: 'Planilha com linhas demais (máximo 20.000).' });
-          return;
-        }
-        setRawPreviewData(jsonData);
-        const processed = processImportData(jsonData, importModule);
-        setProcessedData(processed);
-      } catch (err) {
-        setImportMessage({ type: 'error', text: 'Erro ao ler arquivo. Verifique se é um Excel válido.' });
-      }
-    };
-    reader.readAsBinaryString(selectedFile);
-  };
-
-  React.useEffect(() => {
-    if (rawPreviewData.length > 0) {
-      const processed = processImportData(rawPreviewData, importModule);
-      setProcessedData(processed);
-    }
-  }, [importModule, rawPreviewData]);
-
-  const confirmImport = () => {
-    if (!processedData.length) return;
-    setIsLoadingImport(true);
-
-    setTimeout(() => {
-      try {
-        let internalModule = importModule;
-        if (importModule === 'payables' || importModule === 'receivables') internalModule = 'transactions';
-        store.importData(internalModule, processedData);
-        setImportMessage({
-          type: 'success',
-          text: `${processedData.length} registros importados com sucesso para ${modules.find(m => m.id === importModule)?.name}!`
-        });
-        setRawPreviewData([]);
-        setProcessedData([]);
-        setFile(null);
-      } catch (e) {
-        setImportMessage({ type: 'error', text: 'Erro ao processar importação.' });
-      }
-      setIsLoadingImport(false);
-    }, 1000);
-  };
 
   const handleExport = async (moduleId: string, type: 'xlsx' | 'csv') => {
     let data: any[] = [];
@@ -413,10 +247,10 @@ const ADMIN_HIDDEN_TABS = ['GENERAL', 'CATEGORIES', 'ORDERS', 'FEES', 'IMPORT_EX
   const tabs = [
     { id: 'GENERAL', label: 'Empresa', icon: <Building size={18} /> },
     { id: 'CATEGORIES', label: 'Categorias', icon: <Tag size={18} /> },
-    // A gestão de usuários agora fica em "Administração (Lojas)" (pages/StoreAdmin.tsx), só para o administrador da plataforma.
+    // A gestão de usuários fica na tela Equipe e, para o admin, no painel de assinaturas (components/admin)istrador da plataforma.
     { id: 'ORDERS', label: 'Emissão de Pedido', icon: <FileText size={18} /> },
     { id: 'FEES', label: 'Taxas de Cartão', icon: <DollarSign size={18} /> },
-    { id: 'IMPORT_EXPORT', label: 'Importar / Exportar', icon: <FileSpreadsheet size={18} />, permission: 'IMPORT_EXPORT' },
+    { id: 'IMPORT_EXPORT', label: 'Exportar', icon: <FileSpreadsheet size={18} />, permission: 'IMPORT_EXPORT' },
   ].filter(tab => !tab.permission || hasPermission(tab.permission))
     // No modo admin da plataforma, categorias e taxas de cartão ficam só nas lojas (o lojista edita pela própria tela).
     .filter(tab => !(isPlatformAdminView && ADMIN_HIDDEN_TABS.includes(tab.id)));
@@ -889,7 +723,7 @@ const ADMIN_HIDDEN_TABS = ['GENERAL', 'CATEGORIES', 'ORDERS', 'FEES', 'IMPORT_EX
                         {
                           category: 'Sistema',
                           items: [
-                            { id: 'IMPORT_EXPORT', label: 'Importar / Exportar' },
+                            { id: 'IMPORT_EXPORT', label: 'Exportar' },
                             { id: 'SETTINGS', label: 'Configurações' },
                           ]
                         }
@@ -1087,66 +921,10 @@ const ADMIN_HIDDEN_TABS = ['GENERAL', 'CATEGORIES', 'ORDERS', 'FEES', 'IMPORT_EX
         {/* TAB: IMPORT / EXPORT */}
         {activeTab === 'IMPORT_EXPORT' && (
           <div className="animate-fade-in space-y-6">
-            <h3 className="text-lg font-semibold text-wine-900 dark:text-white mb-2">Importar / Exportar Planilhas</h3>
+            <h3 className="text-lg font-semibold text-wine-900 dark:text-white mb-2">Exportar Planilhas</h3>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Import Card */}
-              <Card title="Importar Dados Inteligente">
-                <div className="space-y-4">
-                  <p className="text-sm text-wine-500 dark:text-wine-400">
-                    O sistema tentará identificar automaticamente colunas como "Nome", "Valor", "Vencimento", etc.
-                  </p>
-                  <Select
-                    label="Destino da Importação"
-                    value={importModule}
-                    onChange={e => setImportModule(e.target.value)}
-                  >
-                    {modules.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  </Select>
-
-                  <div className="border-2 border-dashed border-wine-200 dark:border-slate-700 rounded-lg p-6 text-center hover:bg-wine-50 dark:hover:bg-slate-700/30 transition-colors">
-                    <input
-                      type="file"
-                      accept=".xlsx, .csv"
-                      onChange={handleFileChange}
-                      className="hidden"
-                      id="fileUpload"
-                    />
-                    <label htmlFor="fileUpload" className="cursor-pointer flex flex-col items-center gap-2">
-                      <Upload className="text-wine-400" size={32} />
-                      <span className="text-sm font-medium text-wine-600 dark:text-wine-300">
-                        {file ? file.name : 'Clique para selecionar arquivo (.xlsx, .csv)'}
-                      </span>
-                    </label>
-                  </div>
-
-                  {processedData.length > 0 && (
-                    <div className="bg-emerald-50 dark:bg-emerald-900/20 p-3 rounded text-sm text-emerald-800 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800">
-                      <span className="font-bold flex items-center gap-2">
-                        <Check size={16} /> {processedData.length} registros prontos.
-                      </span>
-                      <p className="text-xs mt-1 opacity-80">As colunas foram mapeadas automaticamente.</p>
-                    </div>
-                  )}
-
-                  <Button
-                    disabled={processedData.length === 0 || isLoadingImport}
-                    onClick={confirmImport}
-                    className="w-full"
-                  >
-                    {isLoadingImport ? 'Processando...' : 'Confirmar Importação'}
-                  </Button>
-
-                  {importMessage && (
-                    <div className={`p-3 rounded flex items-center gap-2 text-sm ${importMessage.type === 'success' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'}`}>
-                      {importMessage.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}
-                      {importMessage.text}
-                    </div>
-                  )}
-                </div>
-              </Card>
-
-              {/* Export Card */}
+              {/* Export Card (importação removida por decisão do dono, item 22) */}
               <Card title="Exportar Dados">
                 <div className="space-y-4">
                   <p className="text-sm text-wine-500 dark:text-wine-400">Selecione um módulo para baixar todos os registros cadastrados.</p>
@@ -1170,44 +948,6 @@ const ADMIN_HIDDEN_TABS = ['GENERAL', 'CATEGORIES', 'ORDERS', 'FEES', 'IMPORT_EX
               </Card>
             </div>
 
-            {/* Preview Table */}
-            {processedData.length > 0 && (
-              <Card title="Pré-visualização (Dados Tratados)">
-                <div className="flex flex-col gap-2">
-                  <div className="text-[10px] text-wine-500 dark:text-wine-400 mb-2 font-bold uppercase tracking-wider">
-                    * Abaixo mostramos como os dados foram interpretados pelo sistema.
-                  </div>
-                  <div className="overflow-x-auto max-h-60 rounded-lg border border-wine-100 dark:border-slate-700">
-                    <table className="w-full text-[10px] text-left">
-                      <thead className="sticky top-0 bg-wine-100 dark:bg-slate-700">
-                        <tr>
-                          {processedData[0] && Object.keys(processedData[0]).slice(1, 8).map(key => (
-                            <th key={key} className="p-2 border-b border-wine-200 dark:border-slate-600 capitalize text-wine-800 dark:text-white font-black">{key}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {processedData.slice(0, 5).map((row, idx) => (
-                          <tr key={idx} className="border-b border-wine-100 dark:border-slate-800 hover:bg-wine-50 dark:hover:bg-slate-700/50 bg-white dark:bg-slate-800 font-medium">
-                            {Object.entries(row).slice(1, 8).map(([key, val], i) => (
-                              <td key={i} className="p-2 truncate max-w-[150px] dark:text-slate-300">
-                                {key.includes('amount') || key.includes('price') || key.includes('cost') || key.includes('total')
-                                  ? formatCurrency(Number(val || 0))
-                                  : String(val)
-                                }
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    <div className="text-center p-2 text-[10px] text-wine-400 bg-wine-50 dark:bg-slate-700 font-bold uppercase tracking-widest">
-                      Mostrando as primeiras 5 linhas de prévia...
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            )}
           </div>
         )}
         {/* TAB: FEES */}

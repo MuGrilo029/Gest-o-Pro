@@ -389,7 +389,7 @@ export const Sales: React.FC = () => {
     const actualInst = method === 'Cartão Débito' ? 0 : inst;
     const fee = cardFees.find(f => f.installments === actualInst);
     if (!fee) return 0;
-    return (amount * fee.percentage) / 100;
+    return Math.round(amount * fee.percentage) / 100; // centavos, como o servidor (060)
   };
 
   const addProductToCart = (product: Product, variantId?: string) => {
@@ -513,7 +513,7 @@ export const Sales: React.FC = () => {
       cardInstallments: isPartialPayment ? installmentsRemaining : installments,
       cardFeePercentage: isPartialPayment
         ? undefined // Complex for partial
-        : (cardFees.find(f => f.installments === installments)?.percentage)
+        : (cardFees.find(f => f.installments === (paymentMethod === 'Cartão Débito' ? 0 : installments))?.percentage)
     };
 
     let success = false;

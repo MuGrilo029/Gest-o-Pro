@@ -17,10 +17,11 @@ export type PlanModuleKey = ModuleKey | 'brand';
 export interface PlanDefinition {
   code: PlanCode;
   name: string;
+  /** Preço mensal em centavos. */
   priceCents: number;
-  /** Preço anual em centavos (10× o mensal). */
+  /** Preço anual em centavos: 10× o mensal (decisão 1; espelha plans.annual_price_cents). */
   annualPriceCents: number;
-  /** Limite de vendedores; null = ilimitado. */
+  /** Limite de vendedores (decisão 1: 1, 3 e 6). null = ilimitado (nenhum plano usa hoje). */
   maxSellers: number | null;
   recommended?: boolean;
   /** Itens do plano em linguagem simples, na ordem da tela. */
@@ -29,7 +30,10 @@ export interface PlanDefinition {
   modules: PlanModuleKey[];
 }
 
-const BASE_MODULES: PlanModuleKey[] = ['dashboard', 'sales', 'inventory', 'customers', 'settings'];
+/** Core fixo em todos os planos (decisão 14): não desliga por plano nem por override. */
+export const CORE_MODULES: PlanModuleKey[] = ['dashboard', 'sales', 'inventory', 'customers', 'settings'];
+const BASE_MODULES: PlanModuleKey[] = CORE_MODULES;
+/** Boletos, Fornecedores e Encomendas entram a partir do Crescimento (decisão 15). */
 const GROWTH_EXTRA: PlanModuleKey[] = ['financial', 'boletos', 'reports', 'production', 'quotes', 'suppliers', 'orders'];
 const ADVANCED_EXTRA: PlanModuleKey[] = ['deliveries', 'push_notifications', 'custom_production', 'brand'];
 
@@ -86,6 +90,33 @@ export const PLANS: PlanDefinition[] = [
 ];
 
 export const getPlan = (code: PlanCode): PlanDefinition => PLANS.find(p => p.code === code)!;
+
+export const isPlanCode = (code: string | null | undefined): code is PlanCode =>
+  !!code && PLANS.some(p => p.code === code);
+
+/** Anual = 10 meses (decisão 1). O preço anual de cada plano está no campo `annualPriceCents`. */
+export const ANNUAL_MONTHS_CHARGED = 10;
+
+/** Ordem dos planos: usada para saber se a troca é upgrade ou downgrade. */
+export const planRank = (code: PlanCode): number => PLANS.findIndex(p => p.code === code);
+
+/**
+ * Plano usado para o limite de vendedores da loja.
+ * Trial lê o Avançado (migração 046). Plano desconhecido/legado: null (o banco decide).
+ */
+export const planForLimits = (code: string | null | undefined): PlanDefinition | null => {
+  if (code === 'trial') return getPlan('avancado');
+  return isPlanCode(code) ? getPlan(code) : null;
+};
+
+/** Limite de vendedores do plano da loja; null = sem limite conhecido no front (o banco decide). */
+export const sellerLimitFor = (code: string | null | undefined): number | null => planForLimits(code)?.maxSellers ?? null;
+
+/** Vendedores que precisam sair antes de trocar para `target` (0 = pode trocar). */
+export const sellersToRemoveFor = (target: PlanCode, currentSellers: number): number => {
+  const limit = getPlan(target).maxSellers;
+  return limit === null ? 0 : Math.max(0, currentSellers - limit);
+};
 
 /** Formata centavos em reais: 4900 -> "R$ 49". */
 export const formatPlanPrice = (cents: number): string => {

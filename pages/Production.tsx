@@ -8,6 +8,7 @@ import { Modal } from '../components/UI';
 import { ServiceConfigForm } from '../components/ServiceConfigForm';
 import { getUUID, formatBrazilDateTime, formatISO } from '../lib/utils';
 import { CustomProductionBoard, ProductionModeTabs, parseCustomSpecs } from '../components/CustomProductionBoard';
+import { ManagerOnly } from '../components/ManagerOnly';
 
 // Helper to safely parse specs
 const parseSpecs = (specsStr: string): FurnitureSpecs | null => {
@@ -41,6 +42,7 @@ const OrderCard: React.FC<{ order: ProductionOrder; onClick: (order: ProductionO
           </span>
           <span className="text-xs text-wine-400">{new Date(order.date).toLocaleDateString()}</span>
         </div>
+        <ManagerOnly>
         <button
           onClick={async (e) => {
             e.stopPropagation();
@@ -53,6 +55,7 @@ const OrderCard: React.FC<{ order: ProductionOrder; onClick: (order: ProductionO
         >
           <X size={14} />
         </button>
+        </ManagerOnly>
         <button
           onClick={(e) => { e.stopPropagation(); onPrint(order); }}
           className="p-1 text-wine-300 hover:text-wine-600 transition-colors ml-1"

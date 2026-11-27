@@ -10,7 +10,7 @@ import { DialogHost } from './components/UI';
 import { SubscriptionBanner } from './components/SubscriptionBanner';
 import { Login } from './pages/Login';
 import { NovoLogin } from './pages/NovoLogin';
-import { ClientesArea } from './components/ClientesArea';
+import { SupportButton } from './components/SupportButton';
 import { MODULES, MODULE_CATEGORIES, ModuleCategory, ROLE_LABELS } from './lib/modules';
 import {
   LayoutDashboard,
@@ -48,7 +48,7 @@ import {
 const lazyPage = <T extends Record<string, any>>(loader: () => Promise<T>, name: keyof T) =>
   React.lazy(() => loader().then(m => ({ default: m[name] as React.ComponentType<any> })));
 const Dashboard = lazyPage(() => import('./pages/Dashboard'), 'Dashboard');
-const AdminDashboard = lazyPage(() => import('./components/AdminDashboard'), 'AdminDashboard');
+const AdminPanel = lazyPage(() => import('./components/admin/AdminPanel'), 'AdminPanel');
 const Financial = lazyPage(() => import('./pages/Financial'), 'Financial');
 const Inventory = lazyPage(() => import('./pages/Inventory'), 'Inventory');
 const Sales = lazyPage(() => import('./pages/Sales'), 'Sales');
@@ -61,7 +61,6 @@ const SalesHistory = lazyPage(() => import('./pages/SalesHistory'), 'SalesHistor
 const Orders = lazyPage(() => import('./pages/Orders'), 'Orders');
 const StockEntries = lazyPage(() => import('./pages/StockEntries'), 'StockEntries');
 const Quotes = lazyPage(() => import('./pages/Quotes'), 'Quotes');
-const StoreAdmin = lazyPage(() => import('./pages/StoreAdmin'), 'StoreAdmin');
 const Team = lazyPage(() => import('./pages/Team'), 'Team');
 const SettingsPage = lazyPage(() => import('./pages/Settings'), 'Settings');
 const MobileApp = lazyPage(() => import('./components/mobile/MobileApp'), 'MobileApp');
@@ -182,9 +181,6 @@ const AppContent: React.FC = () => {
   if (!user) return window.location.hash === '#novo-login' ? <NovoLogin /> : <Login />;
   if (storeStatus === 'loading') return <LoadingScreen message="Carregando sua loja..." />;
   if (storeStatus === 'no_store') return <NoStore />;
-  // Área de clientes nova (só admin da plataforma). O painel antigo continua em Clientes & Lojas.
-  // DialogHost precisa estar montado aqui: confirmDialog/alertDialog da área de Admin dependem dele.
-  if (isPlatformAdmin && window.location.hash === '#area-clientes') return <><DialogHost /><ClientesArea /></>;
   if (subscription && !subscription.accessOk) return <AccessExpired />;
   if (!isInitialized) return <LoadingScreen message="Carregando dados da loja..." />;
 
@@ -223,6 +219,9 @@ const AppContent: React.FC = () => {
     }
   };
 
+  // Dono do SaaS fora de uma loja: só o painel de assinaturas.
+  const isSuperAdminMode = isPlatformAdmin && !impersonatedStore;
+
   // Primeira tela que o usuário pode abrir (para o botão "voltar").
   const firstAllowedView = MODULES.flatMap(m => m.views).find(v => canAccessView(v.view))?.view;
 
@@ -253,7 +252,8 @@ const AppContent: React.FC = () => {
     }
 
     switch (currentView) {
-      case 'DASHBOARD': return isPlatformAdmin && !impersonatedStore ? <AdminDashboard /> : <Dashboard />;
+      // Painel admin (só o dono do SaaS): uma tela de assinaturas. STORE_ADMIN (rota antiga) abre a mesma tela.
+      case 'DASHBOARD': return isSuperAdminMode ? <AdminPanel /> : <Dashboard />;
       case 'PAYABLES': return <Financial type="PAYABLES" />;
       case 'RECEIVABLES': return <Financial type="RECEIVABLES" />;
       case 'BOLETOS': return <Financial type="BOLETOS" />;
@@ -264,7 +264,7 @@ const AppContent: React.FC = () => {
       case 'PRODUCTION': return <Production />;
       case 'DELIVERIES': return <Deliveries />;
       case 'SETTINGS': return <SettingsPage />;
-      case 'STORE_ADMIN': return <StoreAdmin />;
+      case 'STORE_ADMIN': return isSuperAdminMode ? <AdminPanel /> : <Dashboard />;
       case 'TEAM': return <Team />;
       case 'SUPPLIERS': return <Suppliers />;
       case 'REPORTS': return <Reports />;
@@ -306,7 +306,6 @@ const AppContent: React.FC = () => {
   // Menu montado a partir do registro de módulos: só aparecem telas de
   // módulos ligados que o papel do usuário pode abrir.
   const normalizedQuery = menuQuery.trim().toLowerCase();
-  const isSuperAdminMode = isPlatformAdmin && !impersonatedStore;
 
   const menuSections = isSuperAdminMode
     ? [
@@ -314,9 +313,7 @@ const AppContent: React.FC = () => {
           key: 'sistema' as ModuleCategory,
           label: 'Administração SaaS',
           items: [
-            { view: 'DASHBOARD' as AppView, label: 'Painel de Assinaturas' },
-            { view: 'STORE_ADMIN' as AppView, label: 'Clientes & Lojas' },
-            { view: 'SETTINGS' as AppView, label: 'Configurações' },
+            { view: 'DASHBOARD' as AppView, label: 'Assinaturas' },
           ].filter(v => !normalizedQuery || v.label.toLowerCase().includes(normalizedQuery)),
         },
       ].filter(s => s.items.length > 0)
@@ -416,20 +413,20 @@ const AppContent: React.FC = () => {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col h-full overflow-hidden print:overflow-visible print:h-auto">
-        {/* Banner Obrigatório de Impersonação / Modo Suporte */}
+        {/* Banner obrigatório da impersonação (só o dono do SaaS; decisão 36) */}
         {impersonatedStore && (
           <div className="bg-amber-500 text-zinc-950 font-medium px-4 py-2 flex items-center justify-between text-xs sm:text-sm z-30 shadow-sm shrink-0 border-b border-amber-600">
             <div className="flex items-center gap-2">
               <span className="text-base" role="img" aria-label="Aviso">⚠️</span>
               <span>
-                <strong>Modo Suporte / Impersonação:</strong> Você está visualizando a loja <u>{impersonatedStore.name}</u>.
+                <strong>Loja aberta pelo admin:</strong> você está visualizando a loja <u>{impersonatedStore.name}</u>.
               </span>
             </div>
             <button
               onClick={stopImpersonation}
               className="bg-zinc-950 text-white px-3 py-1 rounded-md text-xs font-bold hover:bg-zinc-800 transition-colors shadow-xs"
             >
-              Encerrar Suporte e Voltar ao Admin
+              Sair da loja e voltar às assinaturas
             </button>
           </div>
         )}
@@ -458,6 +455,7 @@ const AppContent: React.FC = () => {
           )}
 
           <div className="flex items-center gap-2 sm:gap-4 ml-auto">
+            {!isSuperAdminMode && <SupportButton />}
             <button
               onClick={() => handleToggleMobileMode(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-red-950 via-wine-900 to-rose-900 text-white hover:from-red-900 hover:to-rose-800 text-xs font-bold shadow-md shadow-red-950/40 transition-all active:scale-95 border border-rose-700/40"

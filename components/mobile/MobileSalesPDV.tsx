@@ -256,7 +256,7 @@ export const MobileSalesPDV: React.FC<MobileSalesPDVProps> = ({
     const actualInst = method === 'DEBIT_CARD' ? 0 : inst;
     const fee = cardFees.find(f => f.installments === actualInst);
     if (!fee) return 0;
-    return (amount * fee.percentage) / 100;
+    return Math.round(amount * fee.percentage) / 100; // centavos, como o servidor (060)
   };
 
   // ── Finish Sale ───────────────────────────────────────────────────────────
@@ -295,7 +295,7 @@ export const MobileSalesPDV: React.FC<MobileSalesPDVProps> = ({
         : calculateFeeAmount(total, paymentMethod, installments),
       cardFeePercentage: isPartial
         ? undefined
-        : (cardFees.find(f => f.installments === installments)?.percentage),
+        : (cardFees.find(f => f.installments === (paymentMethod === 'DEBIT_CARD' ? 0 : installments))?.percentage),
       items: [...cart],
     };
 
