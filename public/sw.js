@@ -1,56 +1,56 @@
-// Service Worker para Web Push Notifications
-// Instalação e ativação do SW
+// Service Worker para Web Push Notifications + cache de assets.
+// v4: network-first para HTML (navegacoes), para que deploys novos cheguem aos aparelhos
+// sem precisar de F5; cache-first apenas para assets estaticos versionados; ativacao
+// apaga caches antigos.
 
-// v3: versão anterior guardava respostas do Supabase; ao ativar, esses caches são apagados
-const CACHE_NAME = 'gestao-pro-v3';
-const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/favicon.svg'
+const CACHE_VERSION = 'gestao-pro-v4';
+const STATIC_CACHE = CACHE_VERSION + '-static';
+
+// Assets estaticos pre-cacheados (shell). O HTML nao entra aqui: ele e buscado na rede.
+const PRECACHE_URLS = [
+  '/favicon.svg',
+  '/app-icon.jpg',
+  '/app-icon.png'
 ];
 
-// Instalar Service Worker
 self.addEventListener('install', (event) => {
-  console.log('📦 Service Worker instalado');
+  console.log('[SW] instalado');
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS).catch(() => {
-        console.warn('⚠️ Alguns assets não puderam ser cacheados');
+    caches.open(STATIC_CACHE).then((cache) => {
+      return cache.addAll(PRECACHE_URLS).catch(() => {
+        console.warn('[SW] alguns assets nao puderam ser pre-cacheados');
       });
     })
   );
   self.skipWaiting();
 });
 
-// Ativar Service Worker
 self.addEventListener('activate', (event) => {
-  console.log('✅ Service Worker ativado');
+  console.log('[SW] ativado');
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName);
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(
+        keys.map((key) => {
+          if (key !== STATIC_CACHE) {
+            return caches.delete(key);
           }
         })
       );
-    })
+      await self.clients.claim();
+    })()
   );
-  self.clients.claim();
 });
 
-// Receber Push Notifications
+// Push Notifications (mantido)
 self.addEventListener('push', (event) => {
-  console.log('📬 Push notification recebida:', event);
-
   let notificationData = {
-    title: '💰 Nova Venda!',
+    title: 'Nova Venda!',
     body: 'Uma nova venda foi registrada.',
     icon: '/app-icon.jpg',
     badge: '/app-icon.jpg',
     tag: 'sale-notification',
     requireInteraction: false
-
   };
 
   if (event.data) {
@@ -75,28 +75,15 @@ self.addEventListener('push', (event) => {
       requireInteraction: notificationData.requireInteraction,
       data: notificationData.data,
       actions: [
-        {
-          action: 'open',
-          title: 'Abrir',
-          icon: '/app-icon.png'
-        },
-        {
-          action: 'close',
-          title: 'Fechar',
-          icon: '/app-icon.png'
-        }
+        { action: 'open', title: 'Abrir', icon: '/app-icon.png' },
+        { action: 'close', title: 'Fechar', icon: '/app-icon.png' }
       ]
     })
   );
 });
 
-// Clicar na Notificação
 self.addEventListener('notificationclick', (event) => {
-  console.log('👆 Notificação clicada:', event.action);
-
   event.notification.close();
-
-  const saleId = event.notification.data?.saleId;
   const clientUrl = event.notification.data?.url || '/';
 
   if (event.action === 'close') {
@@ -105,14 +92,11 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     clients.matchAll({ type: 'window' }).then((clientList) => {
-      // Procura por uma janela já aberta
       for (const client of clientList) {
         if (client.url === clientUrl && 'focus' in client) {
           return client.focus();
         }
       }
-
-      // Se não houver, abre uma nova janela
       if (clients.openWindow) {
         return clients.openWindow(clientUrl);
       }
@@ -120,62 +104,70 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-// Estratégia de Cache: Network First, com fallback para Cache
+// Fetch: network-first para navegacoes (HTML), cache-first para assets estaticos.
 self.addEventListener('fetch', (event) => {
-  // Ignorar requisições não-GET
   if (event.request.method !== 'GET') {
     return;
   }
 
   const reqUrl = new URL(event.request.url);
-  // Só o próprio domínio é tratado pelo cache; outra origem segue direto, sem caches.put
   if (reqUrl.origin !== self.location.origin) {
     return;
   }
 
-  // Chamadas ao Supabase (dados de loja, auth, storage): sempre da rede, nunca em cache.
-  // Sem cache de reserva: dados de uma conta não podem aparecer para outra no mesmo aparelho.
+  // Supabase: sempre rede, nunca cache.
   if (reqUrl.pathname.includes('/rest/v1/') || reqUrl.hostname.includes('supabase') || reqUrl.pathname.includes('supabase')) {
     event.respondWith(fetch(event.request));
     return;
   }
 
-  // Para assets estáticos, usar Cache First
-  event.respondWith(
-    caches.match(event.request).then((response) => {
-      return (
-        response ||
-        fetch(event.request).then((response) => {
-          if (!response || response.status !== 200) {
-            return response;
+  // Navegacao (HTML): network-first, fallback para cache apenas se offline.
+  if (event.request.mode === 'navigate' || (event.request.headers.get('accept') || '').includes('text/html')) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(STATIC_CACHE).then((cache) => cache.put(event.request, clone));
           }
-
-          const responseToCache = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
-
           return response;
         })
-      );
+        .catch(() => caches.match(event.request).then((r) => r || caches.match('/index.html')))
+    );
+    return;
+  }
+
+  // Assets estaticos: cache-first, popula o cache quando vier da rede.
+  event.respondWith(
+    caches.match(event.request).then((cached) => {
+      if (cached) {
+        return cached;
+      }
+      return fetch(event.request).then((response) => {
+        if (!response || response.status !== 200 || response.type === 'opaque') {
+          return response;
+        }
+        const clone = response.clone();
+        caches.open(STATIC_CACHE).then((cache) => {
+          cache.put(event.request, clone);
+        });
+        return response;
+      }).catch(() => cached);
     })
   );
 });
 
-// Sincronização em Background (quando volta online)
 self.addEventListener('sync', (event) => {
-  console.log('🔄 Background Sync:', event.tag);
-
   if (event.tag === 'sync-sales') {
     event.waitUntil(
       fetch('/api/sync-sales')
         .then((response) => {
           if (response.ok) {
-            console.log('✅ Vendas sincronizadas');
+            console.log('[SW] vendas sincronizadas');
           }
         })
         .catch((error) => {
-          console.error('❌ Erro ao sincronizar vendas:', error);
+          console.error('[SW] erro ao sincronizar vendas:', error);
         })
     );
   }
