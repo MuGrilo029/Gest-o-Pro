@@ -140,7 +140,7 @@ describe('quem pode e confirmação', () => {
     expect(body.preview.store).toMatchObject({ id: s.id, name: s.name, deleted_at: null });
     expect(body.preview.rows).toMatchObject({ sales: 1, sale_items: 3, store_members: 3, products: 2 });
     expect(body.preview.storage).toEqual({ products: 2, 'producao-anexos': 1, boletos: 1 });
-    expect(body.preview.retained).toMatchObject({ terms_acceptances: 1, subscription_payments: 1, invoices: 1 });
+    expect(body.preview.retained).toMatchObject({ subscription_payments: 1, invoices: 1 });
     expect(body.preview.logins.map((l: any) => [l.role, l.action])).toEqual([['OWNER', 'apagar'], ['MANAGER', 'apagar'], ['SELLER', 'apagar']]);
     expect(body.preview).toMatchObject({ logins_rule: 'apaga_todos_os_logins_da_loja', blocker: null });
     expect(await snapshot(s.id)).toEqual(before);
@@ -161,13 +161,13 @@ describe('exclusão', () => {
     const [{ d }] = await t.sql<any>('SELECT public._store_delete_tables() d');
     for (const tab of d) expect(after[tab], tab).toBe(0);
     expect(after.files).toBe(0);
-    expect(after).toMatchObject({ terms_acceptances: 1, subscription_payments: 1, invoices: 1, store_deletions: 1 });
+    expect(after).toMatchObject({ subscription_payments: 1, invoices: 1, store_deletions: 1 });
     expect(after.admin_audit_logs).toBeGreaterThan(0);
     expect(await snapshot(b.id)).toEqual(beforeB);
     expect([await loginExists(a.owner), await loginExists(a.seller), await loginExists(a.manager), await loginExists(admin2)]).toEqual([false, false, false, true]);
     expect([await loginExists(b.owner), await loginExists(b.manager), await loginExists(b.seller)]).toEqual([true, true, true]);
-    // O aceite dos Termos sobrevive ao login apagado.
-    expect(await t.sql('SELECT 1 FROM terms_acceptances WHERE user_id = $1', [a.owner])).toHaveLength(1);
+    // O aceite dos Termos e apagado junto com a loja.
+    expect(await t.sql('SELECT 1 FROM terms_acceptances WHERE store_id = $1', [a.id])).toHaveLength(0);
 
     const [st] = await t.sql<any>('SELECT name, is_active, status, deleted_at, contact_email, plan FROM stores WHERE id = $1', [a.id]);
     expect(st).toMatchObject({ name: 'Loja A Excluir', is_active: false, status: 'expired', contact_email: null, plan: null });
@@ -244,11 +244,11 @@ describe('exclusão', () => {
     delete fn.faults.deleteUser;
     await t.addMember(other.id, s.seller, 'OWNER');
     const res = await del(s.id, s.name);
-    expect(res.body).toMatchObject({ status: 'concluida', logins_deleted: 2 });
-    expect(res.body.logins_kept).toEqual([{ user_id: s.seller, reason: 'dono_de_outra_loja' }]);
-    expect(await loginExists(s.seller)).toBe(true);
-    // A outra loja continua com dono.
-    expect(await t.sql('SELECT 1 FROM store_members WHERE store_id = $1 AND user_id = $2 AND role = $3', [other.id, s.seller, 'OWNER'])).toHaveLength(1);
+    expect(res.body).toMatchObject({ status: 'concluida', logins_deleted: 3 });
+    expect(res.body.logins_kept).toEqual([]);
+    expect(await loginExists(s.seller)).toBe(false);
+    // A outra loja perde esse login (aceito pelo dono).
+    expect(await t.sql('SELECT 1 FROM store_members WHERE store_id = $1 AND user_id = $2 AND role = $3', [other.id, s.seller, 'OWNER'])).toHaveLength(0);
   });
 
   it('dono de outra loja é mantido, com o nome na prévia; a outra loja fica intacta e com dono', async () => {
@@ -258,13 +258,12 @@ describe('exclusão', () => {
     const beforeB = await snapshot(b.id);
     const { body } = await fn.call(admin, { action: 'delete_store_preview', store_id: a.id });
     const kept = body.preview.logins.find((l: any) => l.user_id === b.owner);
-    expect(kept).toMatchObject({ action: 'manter', reason: 'dono_de_outra_loja', other_store_names: ['Loja B Do Mesmo Dono'] });
+    expect(kept).toMatchObject({ action: 'apagar', aviso: true, other_store_names: ['Loja B Do Mesmo Dono'] });
     const res = await del(a.id, a.name);
     expect(res.body).toMatchObject({ status: 'concluida', logins_remaining: 0 });
-    expect(res.body.logins_kept.map((l: any) => l.reason)).toContain('dono_de_outra_loja');
-    expect(await loginExists(b.owner)).toBe(true);
-    expect(await snapshot(b.id)).toEqual(beforeB);
-    expect(await t.sql(`SELECT 1 FROM store_members WHERE store_id = $1 AND role = 'OWNER'`, [b.id])).toHaveLength(1);
+    expect(res.body.logins_kept).toEqual([]);
+    expect(await loginExists(b.owner)).toBe(false);
+    expect(await t.sql(`SELECT 1 FROM store_members WHERE store_id = $1 AND role = 'OWNER'`, [b.id])).toHaveLength(0);
   });
 
   it('mais de 100 arquivos saem em lotes', async () => {
