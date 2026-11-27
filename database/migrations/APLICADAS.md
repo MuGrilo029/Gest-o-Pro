@@ -64,4 +64,4 @@ Método: o banco local (PGlite) foi montado com `MASTER_SCHEMA.sql.example` + as
 
 ### A aplicar (escritas e testadas só no PGlite; nenhuma aplicada)
 
-047b, 048, 049, 050, 051, 052, 053, 054, 055, 056, 057, 058, 059 — nesta ordem. A 059 (tabelas: transactions, sales, sale_items; apaga _seller_sale_tx_ok) só junto com o front usando create_sale no addSale; sem isso, o vendedor não consegue vender. Ver a lista com as tabelas alteradas no relatório do Backend ao SeniorDev.
+047b, 048, 049, 050, 051, 052, 053, 054, 055, 056, 057, 058, 059, 060 — nesta ordem. A 060 só redefine create_sale e cria _is_card_method/_is_debit_method (nenhuma tabela alterada). A 059 (tabelas: transactions, sales, sale_items; apaga _seller_sale_tx_ok) só junto com o front usando create_sale no addSale; sem isso, o vendedor não consegue vender. Ver a lista com as tabelas alteradas no relatório do Backend ao SeniorDev.

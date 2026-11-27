@@ -1,4 +1,4 @@
-// Riscos de docs/riscos-seguranca.md cobertos no PGlite (migrações 001–059): A5, A10/A13 e impersonação × loja ativa.
+// Riscos de docs/riscos-seguranca.md cobertos no PGlite (migrações 001–060): A5, A10/A13 e impersonação × loja ativa.
 // A3 (bucket products), A9 (exclusão e configuração por papel) e A11 (producao-anexos) estão em rls.test.ts.
 // Papéis: dono, gerente e vendedor da loja A; dono da loja B; admin da plataforma.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -71,7 +71,7 @@ describe('A10/A13: venda e lançamentos do vendedor só pelo servidor (057 + 059
 
   it('create_sale do vendedor continua gravando venda, itens, receita e taxa', async () => {
     const [{ r }] = await t.as(sellerA, `SELECT create_sale($1::jsonb, $2::jsonb) r`, [
-      JSON.stringify({ total: 100, payment_type: 'FULL', card_fee_amount: 3 }),
+      JSON.stringify({ total: 100, payment_type: 'FULL', payment_method: 'Cartão Crédito', card_installments: 1, card_fee_amount: 3 }),
       JSON.stringify([{ product_name: 'Avulso', quantity: 1, unit_price: 100 }]),
     ]);
     expect(r.lancamentos).toBe(2);
@@ -96,6 +96,80 @@ describe('A10/A13: venda e lançamentos do vendedor só pelo servidor (057 + 059
   it('dono da loja B não grava lançamento nem item em venda da loja A', async () => {
     expect(await t.fails(ownerB, `INSERT INTO transactions (description, amount, type, category, sale_id, store_id) VALUES ('V', 10, 'INCOME', 'Vendas', $1, $2)`, [sale, storeA])).toMatch(/row-level security/);
     expect(await t.fails(ownerB, `INSERT INTO sale_items (sale_id, store_id, product_name, quantity, unit_price) VALUES ($1, $2, 'X', 1, 1)`, [sale, storeA])).toMatch(/row-level security/);
+  });
+});
+
+describe('A13 residual: create_sale recalcula valores no servidor (060)', () => {
+  const item = (unit_price: number, quantity = 1) => ({ product_name: 'Avulso', quantity, unit_price });
+  const cs = (who: string, sale: object, items: object[]) =>
+    t.as(who, `SELECT create_sale($1::jsonb, $2::jsonb) r`, [JSON.stringify(sale), JSON.stringify(items)]);
+  const csFails = (who: string, sale: object, items: object[]) =>
+    t.fails(who, `SELECT create_sale($1::jsonb, $2::jsonb)`, [JSON.stringify(sale), JSON.stringify(items)]);
+  const txOf = (id: string) => t.sql(`SELECT type, amount::float8 AS amount FROM transactions WHERE sale_id = $1 ORDER BY type, amount`, [id]);
+  let storeC: string, ownerC: string;
+
+  beforeAll(async () => {
+    // Loja A com taxa configurada: 1x crédito 3%, débito (0x) 1%.
+    await t.sql(`INSERT INTO card_fees (installments, percentage, store_id) VALUES (1, 3, $1), (0, 1, $1)`, [storeA]);
+    ownerC = await t.createUser('dono.c@teste.local');
+    storeC = await t.createStore('Loja C', ownerC, { plan: 'avancado' });
+  });
+
+  it('total inflado é recusado (venda e lançamentos não gravados)', async () => {
+    const before = (await t.sql(`SELECT count(*)::int n FROM sales`))[0].n;
+    expect(await csFails(sellerA, { total: 999999, payment_type: 'FULL', payment_method: 'PIX' }, [item(100)])).toMatch(/não confere com os itens \(calculado: 100/);
+    expect((await t.sql(`SELECT count(*)::int n FROM sales`))[0].n).toBe(before);
+  });
+
+  it('preço unitário negativo e desconto fora de 0..subtotal são recusados', async () => {
+    expect(await csFails(sellerA, { total: -10, payment_type: 'FULL' }, [item(-10)])).toMatch(/negativ|inválidos/);
+    expect(await csFails(sellerA, { total: 0, discount: 150, payment_type: 'FULL' }, [item(100)])).toMatch(/desconto deve ficar entre 0 e o subtotal/);
+    expect(await csFails(sellerA, { total: 110, discount: -10, payment_type: 'FULL' }, [item(100)])).toMatch(/desconto deve ficar entre 0 e o subtotal/);
+  });
+
+  it('entrada maior que o total e restante errado são recusados', async () => {
+    expect(await csFails(sellerA, { total: 100, payment_type: 'PARTIAL', down_payment: 150, remaining_amount: 0 }, [item(100)])).toMatch(/entrada deve ficar entre 0 e o total/);
+    expect(await csFails(sellerA, { total: 100, payment_type: 'PARTIAL', down_payment: 40, remaining_amount: 600 }, [item(100)])).toMatch(/restante deve ser o total menos a entrada/);
+    expect(await csFails(sellerA, { total: 100, payment_type: 'FULL', down_payment: 500 }, [item(100)])).toMatch(/entrada deve ficar entre 0 e o total/);
+  });
+
+  it('taxa negativa, maior que o total, sem cartão ou diferente da taxa da loja é recusada', async () => {
+    expect(await csFails(sellerA, { total: 100, payment_type: 'FULL', payment_method: 'Cartão Crédito', card_installments: 1, card_fee_amount: -1 }, [item(100)])).toMatch(/Valores da venda inválidos|taxa de cartão deve ficar entre 0 e o total/);
+    expect(await csFails(sellerA, { total: 100, payment_type: 'FULL', payment_method: 'Cartão Crédito', card_installments: 1, card_fee_amount: 101 }, [item(100)])).toMatch(/taxa de cartão deve ficar entre 0 e o total/);
+    expect(await csFails(sellerA, { total: 100, payment_type: 'FULL', payment_method: 'PIX', card_fee_amount: 3 }, [item(100)])).toMatch(/só em pagamento com cartão/);
+    expect(await csFails(sellerA, { total: 100, payment_type: 'FULL', payment_method: 'Cartão Crédito', card_installments: 1, card_fee_amount: 50 }, [item(100)])).toMatch(/não confere com a taxa da loja \(esperado: 3/);
+    // Dividido: no máximo a parte em cartão × maior % (3%): entrada PIX 40, restante cartão 60 → até 1,80.
+    expect(await csFails(sellerA, { total: 100, payment_type: 'PARTIAL', down_payment: 40, remaining_amount: 60, down_payment_method: 'PIX', remaining_payment_method: 'CREDIT_CARD', card_fee_amount: 5 }, [item(100)])).toMatch(/passa da taxa configurada/);
+  });
+
+  it('venda normal do vendedor: à vista no cartão, débito, dividida e com desconto', async () => {
+    const [{ r: a }] = await cs(sellerA, { total: 200, payment_type: 'FULL', payment_method: 'Cartão Crédito', card_installments: 1, card_fee_amount: 6 }, [item(100, 2)]);
+    expect(await txOf(a.sale_id)).toEqual([{ type: 'EXPENSE', amount: 6 }, { type: 'INCOME', amount: 200 }]);
+    const [s] = await t.sql(`SELECT total::float8 total, card_fee_percentage::float8 pct FROM sales WHERE id = $1`, [a.sale_id]);
+    expect(s).toEqual({ total: 200, pct: 3 });
+
+    const [{ r: b }] = await cs(sellerA, { total: 100, payment_type: 'FULL', payment_method: 'DEBIT_CARD', down_payment: 100, card_installments: 0, card_fee_amount: 1 }, [item(100)]);
+    expect(await txOf(b.sale_id)).toEqual([{ type: 'EXPENSE', amount: 1 }, { type: 'INCOME', amount: 100 }]);
+
+    const [{ r: c }] = await cs(sellerA, { total: 90, discount: 10, payment_type: 'PARTIAL', down_payment: 40, remaining_amount: 50, down_payment_method: 'PIX', remaining_payment_method: 'Cartão Crédito', card_fee_amount: 1.5, remaining_status: 'PENDING' }, [item(100)]);
+    expect(await txOf(c.sale_id)).toEqual([{ type: 'EXPENSE', amount: 1.5 }, { type: 'INCOME', amount: 40 }, { type: 'INCOME', amount: 50 }]);
+
+    // Arredondamento do front (float) dentro de 1 centavo é aceito e gravado com o valor do servidor.
+    const [{ r: d }] = await cs(sellerA, { total: 33.33, payment_type: 'FULL', payment_method: 'Cartão Crédito', card_installments: 1, card_fee_amount: 0.9999 }, [item(11.11, 3)]);
+    expect(await txOf(d.sale_id)).toEqual([{ type: 'EXPENSE', amount: 1 }, { type: 'INCOME', amount: 33.33 }]);
+  });
+
+  it('sem taxa configurada na loja: taxa enviada aceita até o total, só com cartão', async () => {
+    const [{ r }] = await cs(ownerC, { total: 100, payment_type: 'FULL', payment_method: 'Cartão Crédito', card_installments: 3, card_fee_amount: 4 }, [item(100)]);
+    expect(await txOf(r.sale_id)).toEqual([{ type: 'EXPENSE', amount: 4 }, { type: 'INCOME', amount: 100 }]);
+  });
+
+  it('gerente e dono: sem regressão e mesmas validações', async () => {
+    for (const who of [managerA, ownerA]) {
+      const [{ r }] = await cs(who, { total: 150, payment_type: 'FULL', payment_method: 'Dinheiro' }, [item(50, 3)]);
+      expect(await txOf(r.sale_id)).toEqual([{ type: 'INCOME', amount: 150 }]);
+      expect(await csFails(who, { total: 999, payment_type: 'FULL' }, [item(50, 3)])).toMatch(/não confere com os itens/);
+    }
   });
 });
 
