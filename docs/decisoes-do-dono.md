@@ -62,7 +62,7 @@ Migrações são escritas e testadas só em banco de teste/local.
 | 51 | Backup nativo do Supabase (PITR) basta. | Confirmar PITR ligado no painel. | S | a fazer |
 | 52 | Corrigir pendências antes de publicar. | Este plano. | SD | a fazer |
 | 53 | Domínio, razão social e CNPJ: **não existem**. | Termos e rodapé com campos a preencher. | Dono | bloqueado pelo dono |
-| 54 | Lojas reais `com-stillo-moveis` e `royal-home` não podem ser tocadas. | Testes só no banco de teste; seeds e scripts com guarda que recusa esses slugs. | Todos | a fazer |
+| 54 | Lojas reais `com-stillo-moveis` e `royal-home` não podem ser tocadas. | Testes só em banco local (PGlite) até existir banco de teste. Guarda por **id da loja** (os slugs no banco não batem com esses nomes: `loja-principal` e vazio), nunca por slug. | Todos | a fazer |
 | 55 | Bloqueadores de venda: estoque e financeiro. | E2E desses dois fluxos é condição de lançamento. | F, B | a fazer |
 | 56 | SeniorDev monta a ordem de entrega. | Ver "Ordem de execução". | SD | pronto |
 | 57 | E2E e pen-test antes do lançamento. | E2E (Playwright) dos fluxos core no banco de teste; pen-test por S. | F, S | a fazer |
@@ -81,7 +81,7 @@ Migrações são escritas e testadas só em banco de teste/local.
 | T2 Edge Functions publicadas; token do webhook; VAPID e segredos no Vault | Conferir versões publicadas e segredos (sem ler valores). Nenhum segredo no front. | Conferência + grep no bundle. | S | a fazer |
 | T3 RLS: `profiles`, MASTER_SCHEMA fora de uso, trigger de roles, 1 conta `is_platform_admin`, Realtime com RLS | MASTER_SCHEMA já virou `.example`. Demais: conferir no banco. | Teste de RLS automatizado. | S | a fazer (MASTER_SCHEMA: pronto) |
 | T4 CSP e cabeçalhos no `vercel.json` | Sem Turnstile, a CSP fica só com Supabase e domínio próprio. | Adicionar CSP em `vercel.json` (domínio definitivo pendente). | S | a fazer |
-| T5 Staging, banco de teste, CI/CD, Gitleaks, gate de deploy | Banco de teste: projeto `supabase-dev` (sem as lojas reais; o acesso do time hoje é só leitura). CI no GitHub Actions do repositório atual: tsc, build, Vitest, gitleaks. | Workflow `.github/workflows/ci.yml`. | S, B | a fazer |
+| T5 Staging, banco de teste, CI/CD, Gitleaks, gate de deploy | **Não existe banco de teste:** o projeto acessado pelo MCP `supabase-dev` é PRODUÇÃO (tem as lojas reais). Testes em Postgres local (PGlite); criar projeto Supabase de teste precisa de aprovação. CI no GitHub Actions do repositório atual: tsc, build, Vitest, gitleaks. | Workflow `.github/workflows/ci.yml`. | S, B | a fazer |
 | T6 Refatorar `store.tsx`; padrões de commit/branch/co-autor; lint/format | Não refatorar `store.tsx` antes do lançamento. Commits convencionais em pt-BR; branch por frente a partir de `preparacao-lancamento`; trailer de co-autor OpenBot. | Seguir na revisão. | SD | pronto |
 | T7 Módulos 02/06/08/12/13/14/16; recuperação de senha; templates de notificação; latência/multi-região | Recuperação de senha pelo Auth do Supabase; templates em pt-BR; sem multi-região. | Conferir recuperação de senha no E2E. | B, F | a fazer |
 | T8 Observabilidade, rate limit, WAF; RPC ou REST | Rate limit nas Edge Functions feito (memória). Front usa RPC para escrita sensível. Logs do Supabase/Vercel bastam. | — | B | pronto (rate limit) |
