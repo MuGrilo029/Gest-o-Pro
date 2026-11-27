@@ -3,7 +3,7 @@ import { MODULES, ModuleKey } from './modules';
 import { PlanCode } from './plans';
 import { callManageUsers } from './teamApi';
 import type { CreateStoreData } from './createStoreRequest';
-import { DeletionPreview, parseDeletionPreview } from './storeDeletion';
+import { DeletionOutcome, DeletionPreview, parseDeletionOutcome, parseDeletionPreview } from './storeDeletion';
 
 /**
  * Painel admin da plataforma (só o dono do SaaS, `is_platform_admin`; decisões 33–38 e 41).
@@ -20,7 +20,13 @@ export const isMissingFunction = (error: any) =>
   !!error && (error.code === 'PGRST202' || error.code === '42883' || /function .* does not exist|Could not find the function/i.test(error.message || ''));
 
 /** Prefixos fixos das mensagens de erro do banco (ERRCODE P0001), combinados com o Backend. */
-export const DB_ERROR_PREFIXES = ['LIMITE_VENDEDORES:', 'UMA_LOJA_POR_DONO:', 'MODULO_CORE:', 'ESTOQUE_DEPOSITO:'];
+export const DB_ERROR_PREFIXES = [
+  'LIMITE_VENDEDORES:', 'UMA_LOJA_POR_DONO:', 'MODULO_CORE:', 'ESTOQUE_DEPOSITO:',
+  'REQUISICAO_REUTILIZADA:', 'CONTA_INEXISTENTE:', 'NOME_NAO_CONFERE:', 'ASSINATURA_NO_GATEWAY:',
+  'TABELA_SEM_TRATAMENTO:', 'REFERENCIA_ENTRE_LOJAS:', 'LOJA_EXCLUIDA:',
+];
+/** O servidor já usou esta chave de repetição com outros dados: é preciso uma chave nova. */
+export const REQUEST_REUSED_PREFIX = 'REQUISICAO_REUTILIZADA:';
 
 /** Tira o prefixo técnico e deixa só a frase para a tela. */
 export const friendlyDbError = (message: string): string => {
@@ -59,6 +65,8 @@ export interface AdminStoreRow {
   sellersCount: number | null;
   maxSellers: number | null;
   createdAt: string | null;
+  /** Exclusão começada e não concluída: o painel só oferece concluir. */
+  deletionPending: boolean;
 }
 
 export interface AdminStorePage {
@@ -88,6 +96,7 @@ export const mapStoreRow = (r: any): AdminStoreRow => ({
   sellersCount: toNum(r.sellers_count),
   maxSellers: toNum(r.max_sellers),
   createdAt: r.created_at ?? null,
+  deletionPending: r.exclusao_pendente === true,
 });
 
 /** Lista de assinaturas (RPC 034, paginada por cursor composto). */
@@ -154,17 +163,30 @@ export const createStore = async (input: CreateStoreInput, requestId: string): P
 
 // ---------------------------------------------------------------- exclusão
 
+/** Chamada à manage-users com a mensagem do erro sem o prefixo técnico. */
+const callStoreAction = async (body: Record<string, unknown>) => {
+  try {
+    return await callManageUsers(body);
+  } catch (e: any) {
+    throw new Error(friendlyDbError(String(e?.message || 'Falha ao falar com o servidor.')));
+  }
+};
+
 /** Prévia do que a exclusão apaga (action delete_store_preview). */
-export const previewDeleteStore = async (storeId: string, storeName: string): Promise<DeletionPreview> =>
-  parseDeletionPreview(await callManageUsers({ action: 'delete_store_preview', store_id: storeId }), storeName);
+export const previewDeleteStore = async (storeId: string, storeName: string): Promise<DeletionPreview> => {
+  const data = await callStoreAction({ action: 'delete_store_preview', store_id: storeId });
+  if (!data?.preview) throw new Error('O servidor não devolveu a prévia da exclusão.');
+  return parseDeletionPreview(data.preview, storeName);
+};
 
 /**
- * Exclui a loja (action delete_store). Irreversível. Se falhar no meio, repetir a mesma chamada
- * continua de onde parou (contrato do Backend).
+ * Exclui a loja (action delete_store). Irreversível. O resultado pode ser parcial (`done: false`);
+ * repetir a mesma chamada continua de onde parou.
  */
-export const deleteStore = async (storeId: string, confirmName: string): Promise<void> => {
-  const data = await callManageUsers({ action: 'delete_store', store_id: storeId, confirm_name: confirmName });
+export const deleteStore = async (storeId: string, confirmName: string): Promise<DeletionOutcome> => {
+  const data = await callStoreAction({ action: 'delete_store', store_id: storeId, confirm_name: confirmName });
   if (!data || data.ok !== true) throw new Error('A exclusão não terminou. Tente de novo: ela continua de onde parou.');
+  return parseDeletionOutcome(data);
 };
 
 // ---------------------------------------------------------------- prazo e status

@@ -51,7 +51,7 @@ test.describe('criar loja', () => {
     const dialog = await openForm(page);
     await fill(dialog, 'dono@e2e.test');
     await submit(dialog);
-    await expect(dialog.getByRole('alert')).toContainText('já é dono de uma loja');
+    await expect(dialog.getByRole('alert')).toContainText('já é dona de outra loja');
     await expect(dialog.getByRole('alert')).not.toContainText('UMA_LOJA_POR_DONO');
     expect(mock.stores).toHaveLength(1);
   });

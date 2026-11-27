@@ -34,11 +34,13 @@ test.describe('excluir loja', () => {
     await expect(drawer.getByTestId('delete-store')).toContainText('irreversível');
     await expect(drawer.getByTestId('delete-logins-text')).toContainText('somente nesta loja');
     await expect(drawer.getByTestId('delete-preview')).toContainText('Produtos');
-    await expect(drawer.getByTestId('delete-preview')).toContainText('Arquivos');
     await expect(drawer.getByTestId('delete-preview')).not.toContainText('Orçamentos'); // zero não aparece
+    await expect(drawer.getByTestId('delete-files')).toContainText('Imagens');
+    await expect(drawer.getByTestId('delete-logins')).toContainText('dono@e2e.test');
+    await expect(drawer.getByTestId('delete-retained')).toContainText('Registro de auditoria');
     const button = drawer.getByRole('button', { name: /excluir loja definitivamente/i });
     await expect(button).toBeDisabled();
-    for (const wrong of ['loja e2e móveis', 'Loja E2E Moveis', `${NAME} `, 'Loja E2E']) {
+    for (const wrong of ['loja e2e móveis', 'Loja E2E Moveis', 'Loja  E2E Móveis', 'Loja E2E']) {
       await drawer.getByLabel('Nome exato da loja').fill(wrong);
       await expect(button, wrong).toBeDisabled();
     }
@@ -64,19 +66,62 @@ test.describe('excluir loja', () => {
     expect(mock.stores).toHaveLength(0);
   });
 
-  test('falha no meio: erro com tentar de novo, que conclui', async ({ page, db }) => {
+  test('falha no banco: nada apagado, erro com tentar de novo, que conclui', async ({ page, db }) => {
     const mock = mustMock(db);
     mock.faults.deleteStore = 1;
     const drawer = await openDelete(page);
     await drawer.getByLabel('Nome exato da loja').fill(NAME);
     await drawer.getByRole('button', { name: /excluir loja definitivamente/i }).click();
     await expect(drawer.getByRole('alert')).toContainText('A exclusão não terminou');
-    await expect(drawer.getByRole('alert')).toContainText('continua de onde parou');
+    await expect(drawer.getByRole('alert')).toContainText('Nada foi apagado');
     expect(mock.stores).toHaveLength(1);
     await drawer.getByRole('button', { name: /^tentar de novo$/i }).click();
     await expect(page.getByText(`A loja "${NAME}" foi excluída.`)).toBeVisible();
     expect(deletions(mock)).toHaveLength(2);
     expect(mock.stores).toHaveLength(0);
+  });
+
+  test('exclusão parcial (200): não diz que concluiu, mostra o que sobrou e tentar de novo termina', async ({ page, db }) => {
+    const mock = mustMock(db);
+    mock.faults.deletePartial = 1;
+    const drawer = await openDelete(page);
+    await drawer.getByLabel('Nome exato da loja').fill(NAME);
+    await drawer.getByRole('button', { name: /excluir loja definitivamente/i }).click();
+    await expect(drawer.getByTestId('delete-partial')).toContainText('Arquivos restantes: 2');
+    await expect(page.getByText(/foi excluída/)).toHaveCount(0);
+    // A lista passa a mostrar só a conclusão.
+    await expect(drawer.getByRole('tab')).toHaveCount(1);
+    await drawer.getByRole('button', { name: /^tentar de novo$/i }).click();
+    await expect(page.getByText(`A loja "${NAME}" foi excluída.`)).toBeVisible();
+    expect(deletions(mock)).toHaveLength(2);
+    expect(mock.stores).toHaveLength(0);
+  });
+
+  test('loja com exclusão pendente na lista oferece só concluir', async ({ page, db }) => {
+    const mock = mustMock(db);
+    Object.assign(mock.stores[0], { deletedAt: new Date().toISOString(), status: 'expired', filesLeft: 2 });
+    mock.stores.push({ id: 'outra', name: 'Outra Loja', status: 'active', plan: 'inicio', ownerEmail: 'o@e2e.test', endsAt: null, createdAt: new Date().toISOString() });
+    await login(page, 'admin');
+    const row = page.getByTestId('admin-store-row').filter({ hasText: NAME });
+    await expect(row).toContainText('Exclusão pendente');
+    await expect(row.getByRole('button', { name: /abrir|gerenciar/i })).toHaveCount(0);
+    await row.getByRole('button', { name: /concluir exclusão/i }).click();
+    const drawer = page.getByRole('dialog');
+    await expect(drawer.getByRole('tab')).toHaveCount(1);
+    await expect(drawer.getByRole('button', { name: /abrir loja/i })).toHaveCount(0);
+    await drawer.getByLabel('Nome exato da loja').fill(NAME);
+    await drawer.getByRole('button', { name: /^concluir exclusão$/i }).click();
+    await expect(page.getByText(`A loja "${NAME}" foi excluída.`)).toBeVisible();
+  });
+
+  test('impedimento do servidor desabilita a exclusão', async ({ page, db }) => {
+    const mock = mustMock(db);
+    mock.faults.blocker = 'há uma assinatura ativa no gateway de pagamento.';
+    const drawer = await openDelete(page);
+    await expect(drawer.getByRole('alert')).toContainText('assinatura ativa no gateway');
+    await expect(drawer.getByLabel('Nome exato da loja')).toBeDisabled();
+    await expect(drawer.getByRole('button', { name: /excluir loja definitivamente/i })).toBeDisabled();
+    expect(deletions(mock)).toHaveLength(0);
   });
 
   test('loja aberta pelo admin que não existe mais é abandonada ao carregar', async ({ page, db }) => {

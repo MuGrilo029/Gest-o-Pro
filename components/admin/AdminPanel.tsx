@@ -51,6 +51,10 @@ const remainingText = (s: AdminStoreRow, now: number) => {
   return ms <= 0 ? `Vencido em ${s.endsAt.toLocaleDateString('pt-BR')}` : `${formatRemaining(ms)} (${s.endsAt.toLocaleDateString('pt-BR')})`;
 };
 
+const PendingBadge: React.FC = () => (
+  <span className="text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap bg-red-100 text-red-900">Exclusão pendente</span>
+);
+
 type Tab = 'assinatura' | 'plano' | 'modulos' | 'equipe' | 'excluir';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'assinatura', label: 'Assinatura' },
@@ -173,16 +177,17 @@ export const AdminPanel: React.FC = () => {
     }
   };
 
-  const openDetail = (s: AdminStoreRow) => { setOpenId(s.id); setTab('assinatura'); };
+  // Loja com exclusão pendente só oferece concluir a exclusão.
+  const openDetail = (s: AdminStoreRow) => { setOpenId(s.id); setTab(s.deletionPending ? 'excluir' : 'assinatura'); };
   const closeCreate = () => { if (!createBusy) setCreating(false); };
   const closeDetail = () => { if (!deleteBusy) setOpenId(null); };
 
   /** Loja excluída: fecha o painel, tira da lista e sai dela se era a loja aberta. */
-  const afterDelete = async (s: AdminStoreRow) => {
+  const afterDelete = async (s: AdminStoreRow, loginsKept: number) => {
     setDeleteBusy(false);
     setOpenId(null);
     setRows(r => r.filter(x => x.id !== s.id));
-    await alertDialog(`A loja "${s.name}" foi excluída.`, 'Pronto');
+    await alertDialog(`A loja "${s.name}" foi excluída.${loginsKept ? ` ${loginsKept} login(s) mantido(s).` : ''}`, 'Pronto');
     if (impersonatedStore?.id === s.id) await stopImpersonation();
     else if (activeStore?.id === s.id) await reload();
     else await load();
@@ -240,7 +245,7 @@ export const AdminPanel: React.FC = () => {
                 <button onClick={() => openDetail(s)} className="w-full text-left bg-white dark:bg-slate-800 rounded-xl border border-wine-100 dark:border-slate-700 p-4" data-testid="admin-store-card">
                   <div className="flex items-start justify-between gap-2">
                     <span className="font-semibold text-wine-950 dark:text-white break-words">{s.name}</span>
-                    <StatusBadge status={s.status} />
+                    {s.deletionPending ? <PendingBadge /> : <StatusBadge status={s.status} />}
                   </div>
                   <p className="text-sm text-wine-700 dark:text-slate-300 mt-1">{planLabel(s.plan)} · {remainingText(s, now)}</p>
                   {s.ownerEmail && <p className="text-xs text-wine-500 dark:text-slate-400 mt-1 break-all">{s.ownerEmail}</p>}
@@ -272,12 +277,18 @@ export const AdminPanel: React.FC = () => {
                     <td className="px-4 py-3 text-wine-700 dark:text-slate-300">
                       {s.sellersCount ?? '—'}{s.maxSellers != null ? ` / ${s.maxSellers}` : ''}
                     </td>
-                    <td className="px-4 py-3"><StatusBadge status={s.status} /></td>
+                    <td className="px-4 py-3">{s.deletionPending ? <PendingBadge /> : <StatusBadge status={s.status} />}</td>
                     <td className="px-4 py-3 text-wine-700 dark:text-slate-300">{remainingText(s, now)}</td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
-                        <button onClick={() => openStore(s)} className={`${btnOutline} flex items-center gap-1`} aria-label={`Abrir a loja ${s.name}`}><Eye size={14} aria-hidden="true" /> Abrir</button>
-                        <button onClick={() => openDetail(s)} className={btnPrimary}>Gerenciar</button>
+                        {s.deletionPending
+                          ? <button onClick={() => openDetail(s)} className={btnDanger}>Concluir exclusão</button>
+                          : (
+                            <>
+                              <button onClick={() => openStore(s)} className={`${btnOutline} flex items-center gap-1`} aria-label={`Abrir a loja ${s.name}`}><Eye size={14} aria-hidden="true" /> Abrir</button>
+                              <button onClick={() => openDetail(s)} className={btnPrimary}>Gerenciar</button>
+                            </>
+                          )}
                       </div>
                     </td>
                   </tr>
@@ -318,13 +329,13 @@ export const AdminPanel: React.FC = () => {
                 </div>
               </div>
               <div className="flex gap-2 shrink-0">
-                <button onClick={() => openStore(selected)} className={`${btnOutline} flex items-center gap-1`}><Eye size={14} aria-hidden="true" /> Abrir loja</button>
+                {!selected.deletionPending && <button onClick={() => openStore(selected)} className={`${btnOutline} flex items-center gap-1`}><Eye size={14} aria-hidden="true" /> Abrir loja</button>}
                 <button onClick={closeDetail} disabled={deleteBusy} aria-label="Fechar" className="p-2 rounded-lg hover:bg-wine-50 dark:hover:bg-slate-700 disabled:opacity-40"><X size={18} /></button>
               </div>
             </div>
 
             <nav className="flex gap-1 overflow-x-auto px-3 pt-2 border-b border-wine-100 dark:border-slate-700" role="tablist">
-              {TABS.map(t => (
+              {TABS.filter(t => !selected.deletionPending || t.id === 'excluir').map(t => (
                 <button key={t.id} role="tab" aria-selected={tab === t.id} disabled={deleteBusy} onClick={() => setTab(t.id)} className={`whitespace-nowrap px-3 py-2 text-sm rounded-t-lg ${tab === t.id ? 'font-semibold text-wine-950 dark:text-white border-b-2 border-wine-900' : 'text-wine-600 dark:text-slate-400'}`}>{t.label}</button>
               ))}
             </nav>
@@ -389,7 +400,7 @@ export const AdminPanel: React.FC = () => {
               {tab === 'modulos' && <ModuleOverridesPanel key={selected.id} storeId={selected.id} />}
 
               {tab === 'excluir' && (
-                <DeleteStorePanel key={selected.id} storeId={selected.id} storeName={selected.name} onBusyChange={setDeleteBusy} onDeleted={() => afterDelete(selected)} />
+                <DeleteStorePanel key={selected.id} storeId={selected.id} storeName={selected.name} onBusyChange={setDeleteBusy} onDeleted={o => afterDelete(selected, o.loginsKept)} onPartial={load} />
               )}
 
               {tab === 'equipe' && (

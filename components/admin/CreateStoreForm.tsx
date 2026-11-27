@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { CreateStoreInput, CreateStoreResult, createStore } from '../../lib/adminApi';
+import { CreateStoreInput, CreateStoreResult, REQUEST_REUSED_PREFIX, createStore, friendlyDbError } from '../../lib/adminApi';
 import { PLANS, PlanCode, formatPlanPrice, planSellersLabel } from '../../lib/plans';
 import { forgetRequest, requestIdFor } from '../../lib/createStoreRequest';
 import { TempPasswordNotice } from '../TempPasswordNotice';
@@ -48,7 +48,10 @@ export const CreateStoreForm: React.FC<{
       setDone({ ...res, email: email.trim() });
       onCreated();
     } catch (err: any) {
-      setError(err?.message || 'Não foi possível criar a loja.');
+      const message = String(err?.message || 'Não foi possível criar a loja.');
+      // Chave de repetição já usada com outros dados: a próxima tentativa leva uma chave nova.
+      if (message.startsWith(REQUEST_REUSED_PREFIX)) forgetRequest(input);
+      setError(friendlyDbError(message));
     } finally {
       sending.current = false;
       setBusy(false);
