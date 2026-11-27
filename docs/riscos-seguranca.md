@@ -29,7 +29,7 @@ Conferência em produção feita só por leitura em 27/11/2026 (projeto `yfyckre
 | A11 | Bucket `producao-anexos`: políticas só checam a pasta da loja; vendedor lê, envia e **exclui** anexos. | Perda de anexos de produção. | DELETE só dono/gerente na mesma migração da A9. | B |
 | A8 | Política `Admins can update profiles` (`is_admin()` = `is_platform_admin()`). | Ok com uma única conta admin. | Manter só o dono com o flag (conferido: 1 conta). | — |
 
-| A12 | CSP: além de Supabase, Vercel e o próprio domínio (T4), precisa de Google Fonts (`index.css`, `pages/Quotes.tsx`) e `quickchart.io` (QR em `pages/Deliveries.tsx`, que também envia o link de avaliação a esse serviço). | Sem eles, fontes e QR quebram. | Mantidos na CSP; para ficar só com Supabase/domínio, o Frontend auto-hospeda as fontes e gera o QR localmente. Decisão do SeniorDev. | SD, F |
+| A12 | CSP dependia de Google Fonts e `quickchart.io` (o QR enviava o link de avaliação a terceiros). | — | **Resolvido:** o Frontend passou a usar fontes locais (`@fontsource`) e QR gerado no navegador (`qrcode`, data: URL) no commit `b371fbd` (`feat/frontend-lancamento`); a CSP ficou só com self, `*.supabase.co` e `vercel.live`. | F, S |
 
 ## Conferido e ok (27/11/2026, leitura)
 - RLS ligado em **todas** as tabelas de `public` (nenhuma sem RLS).
@@ -58,4 +58,4 @@ Conferência em produção feita só por leitura em 27/11/2026 (projeto `yfyckre
 - **Migrações 048+ (Backend):** ainda não existem na branch do Backend; revisão de isolamento, papéis, Storage `products` e sessões pendente. Nenhuma migração aplicada.
 - **Resolvido:** a impersonação restaurada do `sessionStorage` é descartada quando o perfil não é `is_platform_admin`, e o contexto só expõe `impersonatedStore` ao admin (nem por um instante antes do perfil carregar). Testes em `tests/platformAdminAccess.test.ts`.
 - **Baixo (aceito):** a imagem unsplash existe só nos dados de exemplo (`MOCK_DATA` em `store.tsx`); a CSP a bloqueia e o efeito é só uma imagem quebrada nesses exemplos.
-- **A12:** o SeniorDev decidiu tirar as fontes do Google e o quickchart.io (Frontend). Depois da entrega, a CSP fica só com self, `*.supabase.co` e `vercel.live`.
+- **A12 resolvido:** CSP enxuta. Ela depende de `b371fbd` (Frontend): se esta branch entrar antes dela, as fontes do Google ficam bloqueadas. Integrar as duas juntas.
