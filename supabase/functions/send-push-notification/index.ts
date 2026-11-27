@@ -18,6 +18,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
 import webpush from 'https://esm.sh/web-push@3.6.7';
 import { buildCorsHeaders } from '../_shared/cors.ts';
+import { allow, clientKey } from '../_shared/rateLimit.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -47,6 +48,10 @@ Deno.serve(async (req: Request) => {
 
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return respond({ error: 'Método não permitido.' }, 405);
+
+  if (!allow(clientKey(req, 'send-push'), 30, 60_000)) {
+    return respond({ error: 'Muitas requisições. Tente novamente em instantes.' }, 429);
+  }
 
   const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 

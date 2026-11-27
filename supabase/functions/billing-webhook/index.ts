@@ -20,6 +20,7 @@
 //     "gateway_subscription_id": "opcional" }
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
+import { allow, clientKey } from '../_shared/rateLimit.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -48,6 +49,10 @@ const json = (body: unknown, status = 200) =>
 
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
+
+  if (!allow(clientKey(req, 'billing-webhook'), 60, 60_000)) {
+    return json({ error: 'Muitas requisições. Tente novamente em instantes.' }, 429);
+  }
 
   // Sem segredo configurado: recusa tudo.
   if (!TOKEN) return json({ error: 'Webhook não configurado.' }, 503);

@@ -57,8 +57,10 @@ SECURITY DEFINER
 AS $$
 DECLARE
   payload jsonb;
-  func_url text := 'https://tavjnzpyjnjmhtzvlnfj.supabase.co/functions/v1/send-push-notification';
-  anon_key text := 'sb_publishable_xW8p4uzHCHguncjBLvJqoQ_zQXfNnZU';
+  -- URL e chave NAO devem ser commitadas. Configure via Supabase Vault / variaveis de ambiente
+  -- antes de aplicar esta migration em qualquer ambiente.
+  func_url text := 'https://<PROJECT_REF>.supabase.co/functions/v1/send-push-notification';
+  anon_key text := '<SET_VIA_VAULT_OR_ENV>';
 BEGIN
   payload := jsonb_build_object(
     'type', TG_OP,

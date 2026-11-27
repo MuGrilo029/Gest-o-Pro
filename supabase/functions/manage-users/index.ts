@@ -16,6 +16,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
 import { buildCorsHeaders } from '../_shared/cors.ts';
+import { allow, clientKey } from '../_shared/rateLimit.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -55,6 +56,11 @@ Deno.serve(async (req: Request) => {
 
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return fail('Método não permitido.', 405);
+
+  // Rate limit por IP (30 req/min por instância)
+  if (!allow(clientKey(req, 'manage-users'), 30, 60_000)) {
+    return fail('Muitas requisições. Tente novamente em instantes.', 429);
+  }
 
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) return fail('Faça login novamente.', 401);
