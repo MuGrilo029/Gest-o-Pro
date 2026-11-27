@@ -295,7 +295,7 @@ export const MobileSalesPDV: React.FC<MobileSalesPDVProps> = ({
         : calculateFeeAmount(total, paymentMethod, installments),
       cardFeePercentage: isPartial
         ? undefined
-        : (cardFees.find(f => f.installments === installments)?.percentage),
+        : (cardFees.find(f => f.installments === (paymentMethod === 'DEBIT_CARD' ? 0 : installments))?.percentage),
       items: [...cart],
     };
 
