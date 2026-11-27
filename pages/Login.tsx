@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Lock, Mail, Loader2, AlertCircle } from 'lucide-react';
 import { SelfSignup, PENDING_TRIAL_KEY } from './SelfSignup';
+import { PENDING_TERMS_KEY, recordTermsAcceptance } from '../lib/legal';
 
 /**
  * Tela de acesso.
@@ -34,6 +35,13 @@ export const Login: React.FC = () => {
       }
 
       // Cadastro que aguardava confirmação de e-mail: o teste de 1 hora começa agora
+      // Aceite dos Termos feito no cadastro, gravado agora que há sessão (decisão 47).
+      const pendingTerms = localStorage.getItem(PENDING_TERMS_KEY);
+      if (pendingTerms) {
+        await recordTermsAcceptance(pendingTerms);
+        localStorage.removeItem(PENDING_TERMS_KEY);
+      }
+
       const pendingStore = localStorage.getItem(PENDING_TRIAL_KEY);
       if (pendingStore) {
         const { error: rpcError } = await supabase.rpc('start_self_trial', { p_name: pendingStore });
