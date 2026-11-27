@@ -54,7 +54,7 @@ async function fullStore(name: string): Promise<Full> {
   await t.sql(`INSERT INTO invoices (store_id, amount_cents) VALUES ($1, 100)`, [id]);
   await t.sql(`INSERT INTO subscription_payments (store_id, amount, method, period_days) VALUES ($1, 1, 'pix', 30)`, [id]);
   await t.as(owner, `SELECT record_terms_acceptance('v1')`);
-  await t.sql(`INSERT INTO storage.objects (bucket_id, name) VALUES ('products', $1 || '/a.jpg'), ('products', $1 || '/sub/b.jpg'), ('producao-anexos', $1 || '/c.pdf')`, [id]);
+  await t.sql(`INSERT INTO storage.objects (bucket_id, name) VALUES ('products', $1 || '/a.jpg'), ('products', $1 || '/sub/b.jpg'), ('producao-anexos', $1 || '/c.pdf'), ('boletos', $1 || '/d.pdf')`, [id]);
   return { id, name, owner, manager, seller };
 }
 
@@ -139,7 +139,7 @@ describe('quem pode e confirmação', () => {
     const { body } = await fn.call(admin, { action: 'delete_store_preview', store_id: s.id });
     expect(body.preview.store).toMatchObject({ id: s.id, name: s.name, deleted_at: null });
     expect(body.preview.rows).toMatchObject({ sales: 1, sale_items: 3, store_members: 3, products: 2 });
-    expect(body.preview.storage).toEqual({ products: 2, 'producao-anexos': 1 });
+    expect(body.preview.storage).toEqual({ products: 2, 'producao-anexos': 1, boletos: 1 });
     expect(body.preview.retained).toMatchObject({ terms_acceptances: 1, subscription_payments: 1, invoices: 1 });
     expect(body.preview.logins.map((l: any) => [l.role, l.action])).toEqual([['OWNER', 'apagar'], ['MANAGER', 'apagar'], ['SELLER', 'apagar']]);
     expect(body.preview).toMatchObject({ logins_rule: 'recomendada_pendente_do_dono', blocker: null });
@@ -156,7 +156,7 @@ describe('exclusão', () => {
     await t.addMember(a.id, admin2, 'MANAGER');
     const beforeB = await snapshot(b.id);
     const res = await del(a.id, '  Loja A Excluir ');
-    expect(res.body).toMatchObject({ ok: true, status: 'concluida', files_removed: 3, logins_deleted: 2, storage_remaining: 0, logins_remaining: 0, errors: [] });
+    expect(res.body).toMatchObject({ ok: true, status: 'concluida', files_removed: 4, logins_deleted: 2, storage_remaining: 0, logins_remaining: 0, errors: [] });
     expect(res.body.logins_kept.map((l: any) => l.reason).sort()).toEqual(['admin_da_plataforma', 'tem_outra_loja']);
     const after = await snapshot(a.id);
     const [{ d }] = await t.sql<any>('SELECT public._store_delete_tables() d');
@@ -232,7 +232,7 @@ describe('exclusão', () => {
   it('Storage que responde sucesso sem apagar: para sem laço infinito e fica parcial', async () => {
     const s = await fullStore('Loja Sem Progresso');
     fn.faults.storageNoop = true;
-    expect((await del(s.id, s.name)).body).toMatchObject({ status: 'parcial', storage_remaining: 3 });
+    expect((await del(s.id, s.name)).body).toMatchObject({ status: 'parcial', storage_remaining: 4 });
     delete fn.faults.storageNoop;
     expect((await del(s.id, s.name)).body.status).toBe('concluida');
   });
@@ -251,7 +251,7 @@ describe('exclusão', () => {
   it('mais de 100 arquivos saem em lotes', async () => {
     const s = await fullStore('Loja Muitos Arquivos');
     await t.sql(`INSERT INTO storage.objects (bucket_id, name) SELECT 'products', $1 || '/f' || g FROM generate_series(1, 250) g`, [s.id]);
-    expect((await del(s.id, s.name)).body).toMatchObject({ status: 'concluida', files_removed: 253 });
+    expect((await del(s.id, s.name)).body).toMatchObject({ status: 'concluida', files_removed: 254 });
   });
 
   it('dono de autocadastro: login é apagado (loja criada por ele); autor no log de auditoria é mantido', async () => {
