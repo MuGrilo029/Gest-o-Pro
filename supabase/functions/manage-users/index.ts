@@ -20,7 +20,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { allow, clientKey } from '../_shared/rateLimit.ts';
-import { createStore, deleteStore, previewDeleteStore, UNCONFIRMED } from '../_shared/storeAdmin.ts';
+import { createStore, deleteStore, previewDeleteStore, UNCONFIRMED_MEMBER } from '../_shared/storeAdmin.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -165,7 +165,7 @@ Deno.serve(async (req: Request) => {
       if (!link) {
         const { data: account, error: accountError } = await admin.auth.admin.getUserById(userId);
         if (accountError || !account?.user) return fail(isAdmin ? 'Não foi possível conferir a conta.' : REFUSED, 409);
-        if (!account.user.email_confirmed_at) return fail(isAdmin ? UNCONFIRMED : REFUSED, 409);
+        if (!account.user.email_confirmed_at) return fail(isAdmin ? UNCONFIRMED_MEMBER : REFUSED, 409);
       }
     }
 
