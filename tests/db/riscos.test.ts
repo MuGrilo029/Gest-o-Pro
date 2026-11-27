@@ -43,6 +43,22 @@ describe('A10: lançamentos por papel (057, antiga 028)', () => {
     expect(await t.fails(sellerA, `INSERT INTO transactions (description, amount, type, category, sale_id) VALUES ('Taxa', 50, 'EXPENSE', 'Taxas e Impostos', $1)`, [sale])).toMatch(/row-level security/);
   });
 
+  it('vendedor não infla receita acima do total nem duplica a taxa', async () => {
+    // A venda já tem 100 de receita (total 100) e 1 taxa do teste anterior.
+    expect(await t.fails(sellerA, `INSERT INTO transactions (description, amount, type, category, sale_id) VALUES ('Extra', 999999, 'INCOME', 'Vendas', $1)`, [sale])).toMatch(/row-level security/);
+    expect(await t.fails(sellerA, `INSERT INTO transactions (description, amount, type, category, sale_id) VALUES ('Extra', 1, 'INCOME', 'Vendas', $1)`, [sale])).toMatch(/row-level security/);
+    expect(await t.fails(sellerA, `INSERT INTO transactions (description, amount, type, category, sale_id) VALUES ('Taxa 2', 3, 'EXPENSE', 'Taxas e Impostos', $1)`, [sale])).toMatch(/row-level security/);
+    expect(await t.sql(`SELECT id FROM transactions WHERE sale_id = $1`, [sale])).toHaveLength(2);
+  });
+
+  it('entrada + restante dentro do total passam; venda de outro vendedor da mesma loja é recusada', async () => {
+    const [{ id: s2 }] = await t.sql(`INSERT INTO sales (total, store_id, created_by) VALUES (300, $1, $2) RETURNING id`, [storeA, sellerA]);
+    await t.as(sellerA, `INSERT INTO transactions (description, amount, type, category, sale_id) VALUES ('Entrada', 100, 'INCOME', 'Vendas', $1)`, [s2]);
+    await t.as(sellerA, `INSERT INTO transactions (description, amount, type, category, sale_id, status) VALUES ('Restante', 200, 'INCOME', 'Vendas', $1, 'PENDING')`, [s2]);
+    const [{ id: s3 }] = await t.sql(`INSERT INTO sales (total, store_id, created_by) VALUES (50, $1, $2) RETURNING id`, [storeA, managerA]);
+    expect(await t.fails(sellerA, `INSERT INTO transactions (description, amount, type, category, sale_id) VALUES ('V', 50, 'INCOME', 'Vendas', $1)`, [s3])).toMatch(/row-level security/);
+  });
+
   it('vendedor não grava lançamento ligado a venda de outra loja', async () => {
     const [{ id: saleB }] = await t.sql(`INSERT INTO sales (total, store_id, created_by) VALUES (10, $1, $2) RETURNING id`, [storeB, ownerB]);
     expect(await t.fails(sellerA, `INSERT INTO transactions (description, amount, type, category, sale_id) VALUES ('V', 10, 'INCOME', 'Vendas', $1)`, [saleB])).toMatch(/row-level security/);
