@@ -25,3 +25,6 @@ dist-ssr
 
 # Supabase CLI temp
 supabase/.temp/
+
+test-results/
+playwright-report/
