@@ -26,5 +26,4 @@ keywords = ["vapid_private_key"]
 description = "Modelos e documentação sem valores reais"
 paths = [
   '''\.env\.example$''',
-  '''package-lock\.json$''',
 ]

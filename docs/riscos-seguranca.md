@@ -9,7 +9,7 @@ Conferência em produção feita só por leitura em 27/11/2026 (projeto `yfyckre
 |---|---|---|---|---|
 | R1 | Senha mínima de 8 caracteres sem exigir números | 42 | Senhas fracas caem em ataque de dicionário/credential stuffing. | Ligar **Leaked Password Protection** no Auth (hoje desligada — advisor do Supabase) e manter o rate limit do Auth. Não muda a regra de 8 caracteres. |
 | R2 | Senha provisória `12345678` para usuários criados pelo admin | 40 | Senha conhecida por todos: quem souber o e-mail entra até o usuário trocar. É a 1ª senha testada em qualquer ataque. | **Troca obrigatória no primeiro acesso** (flag no perfil + tela de troca antes de liberar o app). Não implementada: depende de confirmação do dono. |
-| R3 | Impersonação sem log e sem limite de tempo (só o dono do SaaS) | 36 | Sem rastro do que foi visto/alterado na loja em nome do lojista; sessão de impersonação esquecida aberta fica ativa. | Conferido: o servidor só deixa `is_platform_admin` trocar para loja alheia (`set_active_store` → `is_store_member`; `current_store_id` revalida). Recomenda-se, se o dono aceitar no futuro, log de início/fim e expiração. |
+| R3 | Impersonação sem log e sem limite de tempo (só o dono do SaaS) | 36 | Sem rastro do que foi visto/alterado na loja em nome do lojista; sessão esquecida aberta segue ativa. | **Risco aceito pelo dono; nenhuma ação no lançamento.** Mitigação existente: o servidor só deixa `is_platform_admin` trocar para loja alheia (`set_active_store` → `is_store_member`; `current_store_id` revalida). |
 | R4 | Exportação e anonimização LGPD fora do lançamento | 48 | Pedido de titular (art. 18) atendido manualmente, com risco de prazo e erro. | Procedimento manual documentado (quem atende, em quantos dias, SQL revisado) até a funcionalidade existir. |
 | R5 | Chave publicável antiga do Supabase no histórico do git (migração 001, commit `8fc5128`) | — | Chave publicável não dá acesso além do RLS, mas fica pública para sempre no histórico. | **Rotacionar** a chave publicável no painel e atualizar `VITE_SUPABASE_ANON_KEY` na Vercel. O gitleaks ignora só esse achado (`.gitleaksignore`). |
 
@@ -28,6 +28,8 @@ Conferência em produção feita só por leitura em 27/11/2026 (projeto `yfyckre
 | A10 | Migração 028 (vendedor só insere receita da própria venda) **não aplicada**: `transactions_insert` aceita qualquer lançamento do vendedor. | Vendedor cria despesa/receita falsa no financeiro. | Testar a 028 no PGlite e listar para aprovação. Pendência: taxa de cartão (EXPENSE) gravada pelo vendedor. | B |
 | A11 | Bucket `producao-anexos`: políticas só checam a pasta da loja; vendedor lê, envia e **exclui** anexos. | Perda de anexos de produção. | DELETE só dono/gerente na mesma migração da A9. | B |
 | A8 | Política `Admins can update profiles` (`is_admin()` = `is_platform_admin()`). | Ok com uma única conta admin. | Manter só o dono com o flag (conferido: 1 conta). | — |
+
+| A12 | CSP: além de Supabase, Vercel e o próprio domínio (T4), precisa de Google Fonts (`index.css`, `pages/Quotes.tsx`) e `quickchart.io` (QR em `pages/Deliveries.tsx`, que também envia o link de avaliação a esse serviço). | Sem eles, fontes e QR quebram. | Mantidos na CSP; para ficar só com Supabase/domínio, o Frontend auto-hospeda as fontes e gera o QR localmente. Decisão do SeniorDev. | SD, F |
 
 ## Conferido e ok (27/11/2026, leitura)
 - RLS ligado em **todas** as tabelas de `public` (nenhuma sem RLS).
