@@ -73,6 +73,9 @@ export class MockDb {
   createRequests = new Map<string, { storeId: string; accountCreated: boolean; email: string }>();
   /** Falhas e demora injetadas pelos testes no manage-users. */
   faults: { createLogin?: number; lostResponse?: number; deleteStore?: number; deletePartial?: number; blocker?: string; delayMs?: number } = {};
+  /** Arquivos aceitos pelo Storage falso ("bucket/caminho") e tentativas recusadas. */
+  uploads: string[] = [];
+  refusedUploads: string[] = [];
   /** Usuário logado (pelo token da última chamada). */
   currentUserId: string | null = null;
   activeStore: Record<string, string> = {};
@@ -499,6 +502,25 @@ export const installSupabaseMock = async (page: Page, db: MockDb) => {
     } catch { db.currentUserId = null; }
 
     const body = (() => { try { return req.postDataJSON(); } catch { return null; } })();
+
+    // ---------------- Storage (como a RLS: só dentro da pasta {store_id}/ da loja ativa)
+    if (path.startsWith('/storage/v1/object/')) {
+      const rest = decodeURIComponent(path.slice('/storage/v1/object/'.length));
+      const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhWz+2wAAAABJRU5ErkJggg==', 'base64');
+      // Leitura pública ou por URL assinada: arquivos antigos continuam abrindo.
+      if (method === 'GET') return route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: pixel });
+      const sign = rest.startsWith('sign/');
+      const [bucket, ...parts] = (sign ? rest.slice('sign/'.length) : rest).split('/');
+      const objectPath = parts.join('/');
+      const storeId = db.activeStore[db.currentUserId!] ?? (db.user()?.isPlatformAdmin ? db.stores[0]?.id : undefined);
+      if (!db.currentUserId || parts.length < 2 || parts[0] !== storeId) {
+        db.refusedUploads.push(`${bucket}/${objectPath}`);
+        return json(route, 400, { statusCode: '403', error: 'Unauthorized', message: 'new row violates row-level security policy' });
+      }
+      if (sign) return json(route, 200, { signedURL: `/object/sign/${bucket}/${objectPath}?token=e2e` });
+      db.uploads.push(`${bucket}/${objectPath}`);
+      return json(route, 200, { Key: `${bucket}/${objectPath}`, Id: uuid() });
+    }
 
     // ---------------- Auth
     if (path.startsWith('/auth/v1/')) {

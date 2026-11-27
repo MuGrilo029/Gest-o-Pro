@@ -11,6 +11,8 @@ import { supabase } from '../lib/supabase';
 
 import { ServiceConfigForm } from '../components/ServiceConfigForm';
 import { ManagerOnly } from '../components/ManagerOnly';
+import { storeFilePath } from '../lib/storagePath';
+import { useStore } from '../contexts/StoreContext';
 
 interface CartItem extends Product {
     quantity: number;
@@ -87,6 +89,7 @@ export const Quotes: React.FC = () => {
     const [discount, setDiscount] = useState<number>(0);
     const [paymentMethod, setPaymentMethod] = useState('Dinheiro');
     const hideBoleto = useHideBoleto();
+    const activeStoreId = useStore().activeStore?.id;
     const [paymentType, setPaymentType] = useState<'FULL' | 'PARTIAL'>('FULL');
     const [downPayment, setDownPayment] = useState(0);
     const [isRemainingPaidNow, setIsRemainingPaidNow] = useState(true); // For Partial (Split vs Future)
@@ -108,13 +111,11 @@ export const Quotes: React.FC = () => {
         if (!e.target.files || e.target.files.length === 0) return;
 
         const file = e.target.files[0];
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${Math.random().toString(36).substring(2)}.${fileExt} `;
-        const filePath = `${fileName} `;
 
         setIsUploading(true);
 
         try {
+            const filePath = storeFilePath(activeStoreId, file.name);
             const { error: uploadError } = await supabase.storage
                 .from('products')
                 .upload(filePath, file);

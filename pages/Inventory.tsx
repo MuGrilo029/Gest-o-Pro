@@ -8,9 +8,12 @@ import { Product, ProductVariant } from '../types';
 import { supabase } from '../lib/supabase';
 import { formatDisplayDate, formatISO, getUUID } from '../lib/utils';
 import { ManagerOnly } from '../components/ManagerOnly';
+import { storeFilePath } from '../lib/storagePath';
+import { useStore } from '../contexts/StoreContext';
 
 export const Inventory: React.FC = () => {
   const { products, addProduct, updateProduct, deleteProduct, categories, registerStockEntry, navigateTo } = useAppStore();
+  const activeStoreId = useStore().activeStore?.id;
   const [showForm, setShowForm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showStockEntry, setShowStockEntry] = useState(false);
@@ -94,14 +97,12 @@ export const Inventory: React.FC = () => {
     if (!e.target.files || e.target.files.length === 0) return;
 
     const file = e.target.files[0];
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
-    const filePath = `${fileName}`;
 
     setIsUploading(true);
 
     try {
-      // 1. Upload to Supabase Storage (Bucket 'products')
+      // 1. Upload to Supabase Storage (Bucket 'products'), sempre na pasta da loja ativa
+      const filePath = storeFilePath(activeStoreId, file.name);
       const { error: uploadError } = await supabase.storage
         .from('products')
         .upload(filePath, file);
@@ -118,7 +119,7 @@ export const Inventory: React.FC = () => {
 
     } catch (error: any) {
       console.error('Error uploading image:', error);
-      alertDialog('Erro ao enviar imagem. Verifique se o bucket "products" existe e é público no Supabase.');
+      alertDialog('Erro ao enviar imagem. Tente novamente.');
     } finally {
       setIsUploading(false);
     }
