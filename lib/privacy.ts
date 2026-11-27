@@ -26,6 +26,3 @@ export const memberLabel = (m: { email: string; name?: string | null }, isPlatfo
  */
 export const effectiveImpersonation = <T>(stored: T | null, isPlatformAdmin: boolean): T | null =>
   isPlatformAdmin ? stored : null;
-
-/** Só o admin da plataforma abre outra loja. */
-export const canImpersonate = (isPlatformAdmin: boolean): boolean => isPlatformAdmin;

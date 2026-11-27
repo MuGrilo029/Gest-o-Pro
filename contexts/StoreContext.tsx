@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import { AppView } from '../types';
 import { applyBrandColor, normalizeHex } from '../lib/brand';
-import { canImpersonate, effectiveImpersonation } from '../lib/privacy';
+import { effectiveImpersonation } from '../lib/privacy';
 import {
   StoreMember,
   createStoreMember,
@@ -19,6 +19,7 @@ import {
   ModuleKey,
   SELLER_DEFAULT_VIEWS,
   StoreRole,
+  assertCanImpersonate,
   canAccessViewFor,
   dependentsOf,
   getModule,
@@ -180,7 +181,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setStores(list);
 
     const { data: profile } = await supabase.from('profiles').select('is_platform_admin').eq('id', user.id).maybeSingle();
-    setIsPlatformAdmin(!!profile?.is_platform_admin);
+    const platformAdmin = profile?.is_platform_admin === true;
+    setIsPlatformAdmin(platformAdmin);
+    // Impersonação restaurada do sessionStorage só vale para o dono do SaaS (decisões 33 e 36).
+    if (!platformAdmin) {
+      setImpersonatedStore(null);
+      if (typeof window !== 'undefined') sessionStorage.removeItem('GESTAO_PRO_IMPERSONATED_STORE');
+    }
 
     if (list.length === 0) {
       setActiveStoreId(null);
@@ -326,7 +333,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [legacyMode, activeStoreId]);
 
   const startImpersonation = useCallback(async (storeId: string, storeName?: string) => {
-    if (!canImpersonate(isPlatformAdmin)) throw new Error('Só o administrador da plataforma abre outra loja.');
+    assertCanImpersonate(isPlatformAdmin);
     await switchStore(storeId);
     const known = stores.find(s => s.id === storeId);
     const target: StoreSummary = known
@@ -355,7 +362,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       role,
       isManager,
       isPlatformAdmin,
-      impersonatedStore,
+      // Só exposta ao dono do SaaS: até o perfil carregar (isPlatformAdmin = false), nada de loja impersonada na tela.
+      impersonatedStore: isPlatformAdmin ? impersonatedStore : null,
       startImpersonation,
       stopImpersonation,
       brandColor,

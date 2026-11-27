@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { canImpersonate, displayEmail, effectiveImpersonation, maskEmail, memberLabel } from '../lib/privacy';
+import { displayEmail, effectiveImpersonation, maskEmail, memberLabel } from '../lib/privacy';
+import { assertCanImpersonate } from '../lib/modules';
 
 describe('e-mail de colegas (decisão 32: mascaramento atual mantido)', () => {
   const m = { email: 'joana.silva@loja.com', name: 'Joana' };
@@ -25,12 +26,12 @@ describe('impersonação só do dono do SaaS (decisões 33 e 36)', () => {
   const stored = { id: 'loja-1', name: 'Loja' };
 
   it('não-admin não abre outra loja e ignora valor salvo no navegador', () => {
-    expect(canImpersonate(false)).toBe(false);
+    expect(() => assertCanImpersonate(false)).toThrow();
     expect(effectiveImpersonation(stored, false)).toBeNull();
   });
 
   it('admin abre e mantém a loja aberta', () => {
-    expect(canImpersonate(true)).toBe(true);
+    expect(() => assertCanImpersonate(true)).not.toThrow();
     expect(effectiveImpersonation(stored, true)).toBe(stored);
   });
 });

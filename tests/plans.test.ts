@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+﻿import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createTestDb, type TestDb } from './db/harness';
 import { MODULES } from '../lib/modules';
-import { PLANS, annualPriceCents, formatPlanPrice, getPlan, isPlanCode, planForLimits, planSellersLabel, sellerLimitFor, sellersToRemoveFor } from '../lib/plans';
+import { PLANS, formatPlanPrice, getPlan, isPlanCode, planForLimits, planSellersLabel, sellerLimitFor, sellersToRemoveFor } from '../lib/plans';
 
 describe('planos: módulos', () => {
   it('toda chave de módulo do plano existe em lib/modules.ts (exceto a marca)', () => {
@@ -67,9 +68,9 @@ describe('planos: decisões do dono (1, 2, 4, 14, 15)', () => {
   });
 
   it('anual = 10 meses', () => {
-    expect(annualPriceCents(getPlan('inicio'))).toBe(49000);
-    expect(annualPriceCents(getPlan('crescimento'))).toBe(99000);
-    expect(annualPriceCents(getPlan('avancado'))).toBe(199000);
+    expect(getPlan('inicio').annualPriceCents).toBe(49000);
+    expect(getPlan('crescimento').annualPriceCents).toBe(99000);
+    expect(getPlan('avancado').annualPriceCents).toBe(199000);
   });
 
   it('Boletos, Fornecedores e Encomendas a partir do Crescimento', () => {
@@ -103,5 +104,39 @@ describe('planos: decisões do dono (1, 2, 4, 14, 15)', () => {
     expect(sellersToRemoveFor('crescimento', 3)).toBe(0);
     expect(sellersToRemoveFor('crescimento', 5)).toBe(2);
     expect(sellersToRemoveFor('avancado', 2)).toBe(0);
+  });
+});
+
+// Banco = fonte de verdade (migração 048). Sobe o banco local (PGlite, 001–056) e compara com lib/plans.ts.
+describe('planos: lib/plans.ts espelha o banco', () => {
+  let t: TestDb;
+  beforeAll(async () => { t = await createTestDb(); }, 120_000);
+  afterAll(async () => { await t?.close(); });
+
+  it('módulos ligados por plano são os mesmos', async () => {
+    for (const plan of PLANS) {
+      const rows = await t.sql<{ module_key: string }>(
+        'SELECT module_key FROM plan_modules WHERE plan_key = $1 AND enabled ORDER BY module_key', [plan.code]);
+      expect(rows.map(r => r.module_key), plan.code).toEqual([...plan.modules].sort());
+    }
+  });
+
+  it('preço mensal, anual (10×) e limite de vendedores são os mesmos', async () => {
+    for (const plan of PLANS) {
+      const [row] = await t.sql<any>('SELECT price_cents, annual_price_cents, max_sellers, active FROM plans WHERE key = $1', [plan.code]);
+      expect(row, plan.code).toEqual({ price_cents: plan.priceCents, annual_price_cents: plan.annualPriceCents, max_sellers: plan.maxSellers, active: true });
+      expect(plan.annualPriceCents).toBe(plan.priceCents * 10);
+    }
+  });
+
+  it('core do banco = core de lib/modules.ts, ligado em todos os planos', async () => {
+    const rows = await t.sql<{ key: string }>('SELECT key FROM module_catalog WHERE core ORDER BY key');
+    expect(rows.map(r => r.key)).toEqual(MODULES.filter(m => m.core).map(m => m.key as string).sort());
+  });
+
+  it('o plano custom não é vendável', async () => {
+    const [row] = await t.sql<any>("SELECT active FROM plans WHERE key = 'custom'");
+    expect(row.active).toBe(false);
+    expect(PLANS.map(p => p.code)).toEqual(['inicio', 'crescimento', 'avancado']);
   });
 });
