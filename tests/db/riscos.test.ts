@@ -1,4 +1,4 @@
-// Riscos de docs/riscos-seguranca.md cobertos no PGlite (migrações 001–062): A5, A10/A13 e impersonação × loja ativa.
+// Riscos de docs/riscos-seguranca.md cobertos no PGlite (migrações 001–063): A5, A10/A13 e impersonação × loja ativa.
 // A3 (bucket products), A9 (exclusão e configuração por papel) e A11 (producao-anexos) estão em rls.test.ts.
 // Papéis: dono, gerente e vendedor da loja A; dono da loja B; admin da plataforma.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -208,6 +208,121 @@ describe('A13 residual: create_sale recalcula valores no servidor (060)', () => 
       expect(await txOf(r.sale_id)).toEqual([{ type: 'INCOME', amount: 150 }]);
       expect(await csFails(who, { total: 999, payment_type: 'FULL' }, [item(50, 3)])).toMatch(/não confere com os itens/);
     }
+  });
+});
+
+describe('delete_sale: exclusão de venda numa transação (063)', () => {
+  const vid = '11111111-1111-4111-8111-111111111111';
+  let prod: string, prodZero: string;
+  const stock = async () => {
+    const [p] = await t.sql(`SELECT quantity, variants FROM products WHERE id = $1`, [prod]);
+    return { qty: p.quantity, variant: p.variants[0].quantity };
+  };
+  const newSale = async () => {
+    const [{ r }] = await t.as(sellerA, `SELECT create_sale($1::jsonb, $2::jsonb) r`, [
+      JSON.stringify({ total: 350, payment_type: 'PARTIAL', down_payment: 100, remaining_amount: 250, down_payment_method: 'PIX',
+                       remaining_payment_method: 'Dinheiro', delivery_type: 'DELIVERY', customer_address: 'Rua A', customer_name: 'Cli' }),
+      JSON.stringify([
+        { product_id: prod, product_name: 'Sofá', quantity: 2, unit_price: 100, variant_id: vid, variant_name: 'Azul' },
+        { product_id: prodZero, product_name: 'Mesa', quantity: 1, unit_price: 50 },
+        { product_name: 'Reforma', category: 'Serviços', service_type: 'INTERNAL', quantity: 1, unit_price: 100 },
+      ]),
+    ]);
+    return r.sale_id as string;
+  };
+  const counts = (id: string) => t.sql(`SELECT
+      (SELECT count(*)::int FROM sales WHERE id = $1) sales, (SELECT count(*)::int FROM sale_items WHERE sale_id = $1) items,
+      (SELECT count(*)::int FROM transactions WHERE sale_id = $1) tx, (SELECT count(*)::int FROM production_orders WHERE sale_id = $1) po,
+      (SELECT count(*)::int FROM deliveries WHERE sale_id = $1) deliv, (SELECT count(*)::int FROM orders WHERE sale_id = $1) orders`, [id]).then(r => r[0]);
+
+  beforeAll(async () => {
+    [{ id: prod }] = await t.sql(`INSERT INTO products (name, price, quantity, variants, store_id) VALUES ('Sofá', 100, 10, $1::jsonb, $2) RETURNING id`,
+      [JSON.stringify([{ id: vid, name: 'Azul', quantity: 5 }]), storeA]);
+    [{ id: prodZero }] = await t.sql(`INSERT INTO products (name, price, quantity, store_id) VALUES ('Mesa', 50, 0, $1) RETURNING id`, [storeA]);
+  });
+
+  it('dono e gerente excluem: estoque e variante voltam, com RETURN, e somem lançamentos, itens, OS, entregas e encomendas', async () => {
+    for (const who of [ownerA, managerA]) {
+      const id = await newSale();
+      expect(await stock()).toEqual({ qty: 8, variant: 3 });
+      const c = await counts(id);
+      expect(c.items).toBe(3); expect(c.tx).toBe(2); expect(c.po).toBe(1); expect(c.orders).toBe(1); expect(c.deliv).toBeGreaterThanOrEqual(1);
+      const [{ r }] = await t.as(who, `SELECT delete_sale($1) r`, [id]);
+      expect(r).toMatchObject({ estoque_devolvido: 1, lancamentos: 2, itens: 3, ordens_producao: 1, encomendas: 1 });
+      expect(await stock()).toEqual({ qty: 10, variant: 5 });
+      expect(await counts(id)).toEqual({ sales: 0, items: 0, tx: 0, po: 0, deliv: 0, orders: 0 });
+      const mov = await t.sql(`SELECT quantity, observations FROM stock_movements WHERE product_id = $1 AND type = 'RETURN' AND observations LIKE $2`, [prod, `%#${id.slice(0, 4)}%`]);
+      expect(mov).toEqual([{ quantity: 2, observations: `Estorno de Venda EXCLUÍDA #${id.slice(0, 4)} - Azul` }]);
+    }
+  });
+
+  it('lançamento antigo sem sale_id: apaga o da venda, mas não o de outra venda com o mesmo prefixo', async () => {
+    const [{ id }] = await t.sql(`INSERT INTO sales (total, store_id, created_by) VALUES (10, $1, $2) RETURNING id`, [storeA, ownerA]);
+    const short = id.slice(0, 4);
+    await t.sql(`INSERT INTO transactions (description, amount, type, category, store_id) VALUES ($1, 10, 'INCOME', 'Vendas', $2)`, [`Venda #${short} - Cli`, storeA]);
+    expect((await t.as(ownerA, `SELECT delete_sale($1) r`, [id]))[0].r.lancamentos).toBe(1);
+
+    const [{ id: a }] = await t.sql(`INSERT INTO sales (id, total, store_id) VALUES ('abcd0000-0000-4000-8000-000000000001', 10, $1) RETURNING id`, [storeA]);
+    await t.sql(`INSERT INTO sales (id, total, store_id) VALUES ('abcd0000-0000-4000-8000-000000000002', 10, $1)`, [storeA]);
+    await t.sql(`INSERT INTO transactions (description, amount, type, category, store_id) VALUES ('Venda #abcd - X', 10, 'INCOME', 'Vendas', $1)`, [storeA]);
+    expect((await t.as(ownerA, `SELECT delete_sale($1) r`, [a]))[0].r.lancamentos).toBe(0);
+    expect(await t.sql(`SELECT id FROM transactions WHERE description = 'Venda #abcd - X'`)).toHaveLength(1);
+  });
+
+  it('vendedor, dono da loja B, anônimo e venda inexistente são recusados; nada muda', async () => {
+    const id = await newSale();
+    expect(await t.fails(sellerA, `SELECT delete_sale($1)`, [id])).toMatch(/Apenas dono ou gerente pode excluir vendas/);
+    expect(await t.fails(ownerB, `SELECT delete_sale($1)`, [id])).toMatch(/Apenas dono ou gerente pode excluir vendas/);
+    expect(await t.fails(null, `SELECT delete_sale($1)`, [id])).toMatch(/permission denied/);
+    expect(await t.fails(ownerA, `SELECT delete_sale($1)`, ['00000000-0000-4000-8000-000000000000'])).toMatch(/Venda não encontrada/);
+    expect((await counts(id)).sales).toBe(1);
+    expect(await stock()).toEqual({ qty: 8, variant: 3 });
+    await t.as(ownerA, `SELECT delete_sale($1)`, [id]);
+  });
+
+  it('admin impersonando a loja B não exclui venda da loja A; com a loja A ativa, exclui', async () => {
+    const id = await newSale();
+    await t.as(admin, `SELECT set_active_store($1)`, [storeB]);
+    expect(await t.fails(admin, `SELECT delete_sale($1)`, [id])).toMatch(/outra loja/);
+    await t.as(admin, `SELECT set_active_store($1)`, [storeA]);
+    expect((await t.as(admin, `SELECT delete_sale($1) r`, [id]))[0].r.itens).toBe(3);
+    expect(await stock()).toEqual({ qty: 10, variant: 5 });
+  });
+
+  it('DELETE direto: sales recusado para todos (só delete_sale); transactions só dono e gerente', async () => {
+    const id = await newSale();
+    for (const who of [ownerA, managerA, sellerA, admin]) {
+      expect(await t.fails(who, `DELETE FROM sales WHERE id = $1`, [id]), String(who)).toMatch(/permission denied/);
+    }
+    expect((await counts(id)).sales).toBe(1);
+    // Vendedor não lê lançamentos, então o DELETE não alcança nada; dono e gerente apagam lançamento avulso.
+    expect(await t.as(sellerA, `DELETE FROM transactions WHERE sale_id = $1 RETURNING id`, [id])).toHaveLength(0);
+    expect((await counts(id)).tx).toBe(2);
+    expect(await t.as(sellerA, `DELETE FROM sale_items WHERE sale_id = $1 RETURNING id`, [id])).toHaveLength(0);
+    for (const who of [ownerA, managerA]) {
+      const [{ id: tx }] = await t.as(who, `INSERT INTO transactions (description, amount, type, category) VALUES ('Avulso', 1, 'EXPENSE', 'Fixas') RETURNING id`);
+      expect(await t.as(who, `DELETE FROM transactions WHERE id = $1 RETURNING id`, [tx])).toHaveLength(1);
+    }
+    expect(await t.sql(`SELECT 1 FROM pg_policies WHERE tablename = 'sales' AND cmd = 'DELETE'`)).toHaveLength(0);
+    await t.as(ownerA, `SELECT delete_sale($1)`, [id]);
+  });
+
+  it('erro no meio desfaz tudo: estoque, lançamentos e itens ficam como estavam', async () => {
+    const id = await newSale();
+    const before = await counts(id);
+    await t.sql(`CREATE FUNCTION public.zz_falha() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'falha simulada'; END $$`);
+    await t.sql(`CREATE TRIGGER zz_falha BEFORE DELETE ON public.orders FOR EACH ROW EXECUTE FUNCTION public.zz_falha()`);
+    try {
+      expect(await t.fails(ownerA, `SELECT delete_sale($1)`, [id])).toMatch(/falha simulada/);
+    } finally {
+      await t.sql(`DROP TRIGGER zz_falha ON public.orders`);
+      await t.sql(`DROP FUNCTION public.zz_falha()`);
+    }
+    expect(await counts(id)).toEqual(before);
+    expect(await stock()).toEqual({ qty: 8, variant: 3 });
+    expect(await t.sql(`SELECT 1 FROM stock_movements WHERE type = 'RETURN' AND observations LIKE $1`, [`%#${id.slice(0, 4)}%`])).toHaveLength(0);
+    await t.as(ownerA, `SELECT delete_sale($1)`, [id]);
+    expect(await stock()).toEqual({ qty: 10, variant: 5 });
   });
 });
 
