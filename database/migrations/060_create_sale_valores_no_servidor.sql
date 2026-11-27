@@ -11,8 +11,7 @@
 --     as parcelas da entrada);
 --   * venda e lançamentos usam os valores calculados, nunca os enviados.
 --   * recusa NaN e ±Infinity em preço, total, desconto, entrada, restante e taxa (a 061 põe CHECK nas colunas);
---   * loja sem card_fees: a taxa enviada vale de 0 até o total, só com cartão (o PDV calcula 0 nesse caso).
---     Exigir card_fees ou aceitar só 0 é decisão de produto; registrado como pendência para o SeniorDev.
+--   * loja sem card_fees: taxa só 0, para qualquer papel (decisão do SeniorDev; o PDV já calcula 0 nesse caso).
 -- Não muda: limite de desconto por papel e preço de tabela (TODO, docs/duvidas-dono.md D4).
 -- Idempotente (CREATE OR REPLACE). Não altera dados existentes.
 
@@ -151,7 +150,11 @@ BEGIN
       v_fee := round(v_fee, 2);
     END IF;
   ELSE
-    v_fee := round(v_fee, 2);
+    -- Sem pagamento em cartão (já recusado acima se taxa > 0) ou loja sem card_fees: taxa só 0 (decisão do SeniorDev).
+    IF v_fee > 0.005 THEN
+      RAISE EXCEPTION 'Loja sem taxa de cartão cadastrada: a taxa da venda deve ser 0.';
+    END IF;
+    v_fee := 0;
   END IF;
 
   m_orders := public._store_module_on(v_store, 'orders');

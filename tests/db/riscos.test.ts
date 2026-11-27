@@ -1,4 +1,4 @@
-// Riscos de docs/riscos-seguranca.md cobertos no PGlite (migrações 001–061): A5, A10/A13 e impersonação × loja ativa.
+// Riscos de docs/riscos-seguranca.md cobertos no PGlite (migrações 001–062): A5, A10/A13 e impersonação × loja ativa.
 // A3 (bucket products), A9 (exclusão e configuração por papel) e A11 (producao-anexos) estão em rls.test.ts.
 // Papéis: dono, gerente e vendedor da loja A; dono da loja B; admin da plataforma.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -21,6 +21,8 @@ beforeAll(async () => {
   await t.addMember(storeA, sellerA, 'SELLER');
   await t.sql(`INSERT INTO products (name, price, store_id) VALUES ('PA', 1, $1), ('PB', 1, $2)`, [storeA, storeB]);
   await t.sql(`INSERT INTO customers (name, store_id) VALUES ('CA', $1), ('CB', $2)`, [storeA, storeB]);
+  // Loja A com taxa de cartão configurada: 1x crédito 3%, débito (0x) 1%. Loja sem card_fees só aceita taxa 0 (060).
+  await t.sql(`INSERT INTO card_fees (installments, percentage, store_id) VALUES (1, 3, $1), (0, 1, $1)`, [storeA]);
 }, 120_000);
 afterAll(async () => { await t?.close(); });
 
@@ -109,8 +111,6 @@ describe('A13 residual: create_sale recalcula valores no servidor (060)', () => 
   let storeC: string, ownerC: string;
 
   beforeAll(async () => {
-    // Loja A com taxa configurada: 1x crédito 3%, débito (0x) 1%.
-    await t.sql(`INSERT INTO card_fees (installments, percentage, store_id) VALUES (1, 3, $1), (0, 1, $1)`, [storeA]);
     ownerC = await t.createUser('dono.c@teste.local');
     storeC = await t.createStore('Loja C', ownerC, { plan: 'avancado' });
   });
@@ -183,9 +183,23 @@ describe('A13 residual: create_sale recalcula valores no servidor (060)', () => 
     expect(await txOf(d.sale_id)).toEqual([{ type: 'EXPENSE', amount: 1 }, { type: 'INCOME', amount: 33.33 }]);
   });
 
-  it('sem taxa configurada na loja: taxa enviada aceita até o total, só com cartão', async () => {
-    const [{ r }] = await cs(ownerC, { total: 100, payment_type: 'FULL', payment_method: 'Cartão Crédito', card_installments: 3, card_fee_amount: 4 }, [item(100)]);
-    expect(await txOf(r.sale_id)).toEqual([{ type: 'EXPENSE', amount: 4 }, { type: 'INCOME', amount: 100 }]);
+  it('sem taxa configurada na loja: taxa > 0 recusada (à vista e dividido); taxa 0 passa', async () => {
+    expect(await csFails(ownerC, { total: 100, payment_type: 'FULL', payment_method: 'Cartão Crédito', card_installments: 3, card_fee_amount: 4 }, [item(100)])).toMatch(/sem taxa de cartão cadastrada/);
+    expect(await csFails(ownerC, { total: 100, payment_type: 'FULL', payment_method: 'Cartão Crédito', card_installments: 1, card_fee_amount: 0.02 }, [item(100)])).toMatch(/sem taxa de cartão cadastrada/);
+    expect(await csFails(ownerC, { total: 100, payment_type: 'PARTIAL', down_payment: 40, remaining_amount: 60, down_payment_method: 'PIX', remaining_payment_method: 'CREDIT_CARD', card_fee_amount: 1 }, [item(100)])).toMatch(/sem taxa de cartão cadastrada/);
+    const [{ r }] = await cs(ownerC, { total: 100, payment_type: 'FULL', payment_method: 'Cartão Crédito', card_installments: 3, card_fee_amount: 0 }, [item(100)]);
+    expect(await txOf(r.sale_id)).toEqual([{ type: 'INCOME', amount: 100 }]);
+    const [s] = await t.sql(`SELECT card_fee_amount::float8 fee FROM sales WHERE id = $1`, [r.sale_id]);
+    expect(s.fee).toBe(0);
+  });
+
+  it('card_fees: porcentagem fora de 0..100 ou NaN recusada (062); dentro da faixa passa', async () => {
+    for (const bad of ['-1', '101', 'NaN', 'Infinity']) {
+      expect(await t.fails(ownerA, `INSERT INTO card_fees (installments, percentage) VALUES (12, '${bad}')`), bad).toMatch(/card_fees_percentage_faixa/);
+    }
+    expect(await t.as(ownerA, `INSERT INTO card_fees (installments, percentage) VALUES (12, 100) RETURNING id`)).toHaveLength(1);
+    const [{ id }] = await t.sql(`SELECT id FROM card_fees WHERE store_id = $1 AND installments = 12`, [storeA]);
+    expect(await t.fails(ownerA, `UPDATE card_fees SET percentage = 'NaN' WHERE id = $1`, [id])).toMatch(/card_fees_percentage_faixa/);
   });
 
   it('gerente e dono: sem regressão e mesmas validações', async () => {
