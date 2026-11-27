@@ -15,7 +15,7 @@
 --   * logins que a regra manda manter; cópias em backups e em schemas snapshot_* do próprio banco.
 -- Aceite dos Termos: a FK para auth.users apagava o aceite junto com o login (ON DELETE CASCADE). A FK sai para o
 -- registro sobreviver à exclusão do login; o user_id continua gravado.
--- LOGINS: regra recomendada, PENDENTE de resposta do dono. Toda a regra está em _store_login_keep_reason.
+-- LOGINS: decisão do dono (27/11) — apaga todos os logins da loja, sem exceção (só admin da plataforma).
 -- Idempotente.
 
 BEGIN;
@@ -52,15 +52,14 @@ RETURNS text[] LANGUAGE sql IMMUTABLE SET search_path TO '' AS $$
                'billing_gateway_requests', 'upgrade_payment_events', 'store_deletions']
 $$;
 
--- >>> REGRA DE LOGINS (pendente do dono). NULL = apagar; texto = manter, com o motivo. <<<
--- Recomendada: apaga só o login que existe apenas nesta loja; nunca admin da plataforma nem quem tem outra loja.
--- Quem aparece como autor no log de auditoria também fica (a FK e a retenção do log impedem apagar).
+-- >>> REGRA DE LOGINS (decisão do dono 27/11: apaga tudo, incluindo os logins da loja; não manter nenhum). <<<
+-- NULL = apagar; texto = manter, com o motivo. Só o admin da plataforma (dono do SaaS) é preservado:
+-- ele não é login de loja. Quem tem outra loja ou aparece no log de auditoria também é apagado;
+-- o log de auditoria e o aceite dos Termos mantêm o user_id como UUID órfão (retenção, sem FK).
 CREATE OR REPLACE FUNCTION public._store_login_keep_reason(p_user uuid, p_store uuid)
 RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO '' AS $$
   SELECT CASE
     WHEN COALESCE((SELECT p.is_platform_admin FROM public.profiles p WHERE p.id = p_user), false) THEN 'admin_da_plataforma'
-    WHEN EXISTS (SELECT 1 FROM public.store_members m WHERE m.user_id = p_user AND m.store_id <> p_store) THEN 'tem_outra_loja'
-    WHEN EXISTS (SELECT 1 FROM public.admin_audit_logs a WHERE a.admin_id = p_user) THEN 'autor_no_log_de_auditoria'
   END
 $$;
 
@@ -195,7 +194,7 @@ BEGIN
     INTO v_logins FROM public.store_members m JOIN auth.users u ON u.id = m.user_id WHERE m.store_id = p_store;
   RETURN jsonb_build_object(
     'store', jsonb_build_object('id', st.id, 'name', st.name, 'status', st.status, 'deleted_at', st.deleted_at),
-    'rows', v_rows, 'storage', v_storage, 'logins', v_logins, 'logins_rule', 'recomendada_pendente_do_dono',
+    'rows', v_rows, 'storage', v_storage, 'logins', v_logins, 'logins_rule', 'apaga_todos_os_logins_da_loja',
     'retained', v_kept_rows, 'blocker', public._store_delete_blocker(p_store));
 END $$;
 
