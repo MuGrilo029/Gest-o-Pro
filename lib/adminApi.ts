@@ -23,7 +23,7 @@ export const isMissingFunction = (error: any) =>
 export const DB_ERROR_PREFIXES = [
   'LIMITE_VENDEDORES:', 'UMA_LOJA_POR_DONO:', 'MODULO_CORE:', 'ESTOQUE_DEPOSITO:',
   'REQUISICAO_REUTILIZADA:', 'CONTA_INEXISTENTE:', 'NOME_NAO_CONFERE:', 'ASSINATURA_NO_GATEWAY:',
-  'TABELA_SEM_TRATAMENTO:', 'REFERENCIA_ENTRE_LOJAS:', 'LOJA_EXCLUIDA:',
+  'TABELA_SEM_TRATAMENTO:', 'REFERENCIA_ENTRE_LOJAS:', 'LOJA_EXCLUIDA:', 'CONTA_NAO_CONFIRMADA:',
 ];
 /** O servidor já usou esta chave de repetição com outros dados: é preciso uma chave nova. */
 export const REQUEST_REUSED_PREFIX = 'REQUISICAO_REUTILIZADA:';

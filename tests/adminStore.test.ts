@@ -49,7 +49,7 @@ describe('excluir loja', () => {
       storage: { products: 2, 'producao-anexos': 0 },
       logins: [
         { user_id: 'a', email: 'dono@x.test', role: 'OWNER', action: 'apagar', reason: null },
-        { user_id: 'b', email: 'v@x.test', role: 'SELLER', action: 'manter', reason: 'tem_outra_loja' },
+        { user_id: 'b', email: 'v@x.test', role: 'SELLER', action: 'apagar', reason: null },
       ],
       retained: { admin_audit_logs: 4 },
       blocker: null,
@@ -58,7 +58,7 @@ describe('excluir loja', () => {
     expect(p.pending).toBe(false);
     expect(p.rows.map(i => [i.label, i.count])).toEqual([['Vendas', 3], ['outra tabela', 1]]);
     expect(p.files.map(i => i.count)).toEqual([2]);
-    expect(p.logins.map(l => [l.remove, l.reason])).toEqual([[true, ''], [false, 'participa de outra loja']]);
+    expect(p.logins.map(l => [l.userId, l.email])).toEqual([['a', 'dono@x.test'], ['b', 'v@x.test']]);
     expect(p.retained[0].label).toBe('Registro de auditoria');
     expect(p.blocker).toBeNull();
   });

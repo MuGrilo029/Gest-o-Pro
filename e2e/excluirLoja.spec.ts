@@ -32,7 +32,7 @@ test.describe('excluir loja', () => {
     const mock = mustMock(db);
     const drawer = await openDelete(page);
     await expect(drawer.getByTestId('delete-store')).toContainText('irreversível');
-    await expect(drawer.getByTestId('delete-logins-text')).toContainText('somente nesta loja');
+    await expect(drawer.getByTestId('delete-logins-text')).toContainText('Todos os logins');
     await expect(drawer.getByTestId('delete-preview')).toContainText('Produtos');
     await expect(drawer.getByTestId('delete-preview')).not.toContainText('Orçamentos'); // zero não aparece
     await expect(drawer.getByTestId('delete-files')).toContainText('Imagens');

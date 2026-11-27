@@ -3,7 +3,7 @@ import { AlertTriangle, Loader2 } from 'lucide-react';
 import { useStore } from '../../contexts/StoreContext';
 import { deleteStore, previewDeleteStore } from '../../lib/adminApi';
 import {
-  CountLine, DeletionOutcome, DeletionPreview, LOGIN_DELETION_POLICY, LOGIN_DELETION_TEXT, confirmNameMatches,
+  CountLine, DeletionOutcome, DeletionPreview, LOGIN_DELETION_TEXT, confirmNameMatches,
 } from '../../lib/storeDeletion';
 
 const Lines: React.FC<{ title: string; items: CountLine[]; testId: string }> = ({ title, items, testId }) => (
@@ -80,15 +80,14 @@ export const DeleteStorePanel: React.FC<{
     onBusyChange?.(false);
   };
 
-  const removed = preview?.logins.filter(l => l.remove) ?? [];
-  const kept = preview?.logins.filter(l => !l.remove) ?? [];
+  const removed = preview?.logins ?? [];
 
   return (
     <div className="space-y-4" data-testid="delete-store">
       <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-900/20 p-3 text-red-800 dark:text-red-200">
         <p className="flex items-center gap-2 font-semibold"><AlertTriangle size={16} aria-hidden="true" /> Excluir a loja é irreversível.</p>
         <p className="mt-1">Os dados e os arquivos da loja são apagados e não dá para recuperar pelo sistema.</p>
-        <p className="mt-1" data-testid="delete-logins-text">{LOGIN_DELETION_TEXT[LOGIN_DELETION_POLICY]}</p>
+        <p className="mt-1" data-testid="delete-logins-text">{LOGIN_DELETION_TEXT}</p>
       </div>
 
       {previewError && (
@@ -118,11 +117,10 @@ export const DeleteStorePanel: React.FC<{
               <ul>{removed.map(l => <li key={l.userId} className="break-all">{l.email} · {ROLE[l.role] ?? l.role}</li>)}</ul>
             </section>
           )}
-          {kept.length > 0 && (
-            <section data-testid="kept-logins">
-              <h3 className="font-semibold text-wine-950 dark:text-white mb-1">Logins mantidos ({kept.length})</h3>
-              <ul>{kept.map(l => <li key={l.userId} className="break-all">{l.email} · {ROLE[l.role] ?? l.role}{l.reason && ` (${l.reason})`}</li>)}</ul>
-            </section>
+          {preview.warning && (
+            <p role="alert" className="rounded-lg border border-amber-400 bg-amber-50 dark:bg-amber-900/30 p-3 text-amber-900 dark:text-amber-200" data-testid="delete-login-warning">
+              {preview.warning}
+            </p>
           )}
           {preview.retained.length > 0 && <Lines title="Continua guardado" items={preview.retained} testId="delete-retained" />}
 

@@ -76,6 +76,8 @@ export class MockDb {
   /** Arquivos aceitos pelo Storage falso ("bucket/caminho") e tentativas recusadas. */
   uploads: string[] = [];
   refusedUploads: string[] = [];
+  removedFiles: string[] = [];
+  signedFiles: string[] = [];
   /** Usuário logado (pelo token da última chamada). */
   currentUserId: string | null = null;
   activeStore: Record<string, string> = {};
@@ -155,7 +157,18 @@ const requireAdmin = (db: MockDb) => {
   return null;
 };
 
+/** 068: dono ou gerente da loja ativa (ou o admin na loja aberta) com Financeiro e Boletos ligados. */
+const canAccessBoletos = (db: MockDb) => {
+  const uid = db.currentUserId;
+  const storeId = uid ? db.activeStore[uid] ?? (db.user()?.isPlatformAdmin ? db.stores[0]?.id : undefined) : undefined;
+  if (!uid || !storeId) return false;
+  const role = db.members.find(m => m.storeId === storeId && m.userId === uid)?.role;
+  const manager = db.user()?.isPlatformAdmin || role === 'OWNER' || role === 'MANAGER';
+  return !!manager && db.moduleEnabled(storeId, 'financial') && db.moduleEnabled(storeId, 'boletos');
+};
+
 const RPC: Record<string, RpcHandler> = {
+  can_access_boletos: (_a, db) => ({ body: canAccessBoletos(db) }),
   my_stores: (_a, db) => {
     const uid = db.currentUserId;
     const u = db.user();
@@ -439,11 +452,15 @@ const handleStoreAction = (b: Row, db: MockDb): { status?: number; body: unknown
           store: { id: store.id, name: store.name, status: store.status, deleted_at: store.deletedAt ?? null },
           rows: gone ? { sales: 0, products: 0 } : { sales: db.table('sales').length, products: db.table('products').length, store_members: members.length, quotes: 0 },
           storage: { products: store.filesLeft ?? 2, 'producao-anexos': 0 },
-          logins: members.map(m => {
-            const elsewhere = db.members.some(o => o.userId === m.userId && o.storeId !== store.id);
-            return { user_id: m.userId, email: m.email, role: m.role, action: elsewhere ? 'manter' : 'apagar', reason: elsewhere ? 'tem_outra_loja' : null };
-          }),
-          logins_rule: 'recomendada_pendente_do_dono',
+          logins: members.map(m => ({ user_id: m.userId, email: m.email, role: m.role, action: 'apagar', reason: null })),
+          logins_rule: 'apaga_todos',
+          warning: (() => {
+            const affected = members
+              .filter(m => db.members.some(o => o.userId === m.userId && o.storeId !== store.id))
+              .map(m => db.stores.find(s => s.id !== store.id && db.members.some(o => o.userId === m.userId && o.storeId === s.id))?.name)
+              .filter(Boolean) as string[];
+            return affected.length ? 'As seguintes lojas ficarao sem dono: ' + affected.join(', ') + '.' : null;
+          })(),
           retained: { admin_audit_logs: 3 },
           blocker: db.faults.blocker ?? null,
         },
@@ -509,15 +526,27 @@ export const installSupabaseMock = async (page: Page, db: MockDb) => {
       const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhWz+2wAAAABJRU5ErkJggg==', 'base64');
       // Leitura pública ou por URL assinada: arquivos antigos continuam abrindo.
       if (method === 'GET') return route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: pixel });
+      if (method === 'DELETE') {
+        // remove([caminhos]): só o que a política deixa apagar.
+        const bucket = rest.split('/')[0];
+        const storeId = db.activeStore[db.currentUserId!] ?? (db.user()?.isPlatformAdmin ? db.stores[0]?.id : undefined);
+        const prefixes: string[] = req.postDataJSON()?.prefixes ?? [];
+        const allowed = prefixes.filter(p => p.split('/')[0] === storeId && (bucket !== 'boletos' || canAccessBoletos(db)));
+        db.removedFiles.push(...allowed.map(p => `${bucket}/${p}`));
+        return json(route, 200, allowed.map(name => ({ name })));
+      }
       const sign = rest.startsWith('sign/');
       const [bucket, ...parts] = (sign ? rest.slice('sign/'.length) : rest).split('/');
       const objectPath = parts.join('/');
       const storeId = db.activeStore[db.currentUserId!] ?? (db.user()?.isPlatformAdmin ? db.stores[0]?.id : undefined);
-      if (!db.currentUserId || parts.length < 2 || parts[0] !== storeId) {
+      if (!db.currentUserId || parts.length < 2 || parts[0] !== storeId || (bucket === 'boletos' && !canAccessBoletos(db))) {
         db.refusedUploads.push(`${bucket}/${objectPath}`);
         return json(route, 400, { statusCode: '403', error: 'Unauthorized', message: 'new row violates row-level security policy' });
       }
-      if (sign) return json(route, 200, { signedURL: `/object/sign/${bucket}/${objectPath}?token=e2e` });
+      if (sign) {
+        db.signedFiles.push(`${bucket}/${objectPath}`);
+        return json(route, 200, { signedURL: `/object/sign/${bucket}/${objectPath}?token=e2e` });
+      }
       db.uploads.push(`${bucket}/${objectPath}`);
       return json(route, 200, { Key: `${bucket}/${objectPath}`, Id: uuid() });
     }

@@ -4,25 +4,11 @@
  */
 
 /**
- * Destino dos logins. A regra é aplicada no banco (a prévia diz, login a login, o que será apagado ou
- * mantido); este é só o texto explicativo. O dono ainda não confirmou a regra recomendada: quando
- * responder, troque LOGIN_DELETION_POLICY para o texto bater com o banco.
+ * Regra do dono (27/11, atualizada): todos os logins da loja são apagados, mesmo que o login também
+ * seja dono de outra loja; o aceite dos Termos vai junto. O servidor pode mandar um aviso listando as
+ * lojas que ficarão sem dono (em vez de "logins mantidos").
  */
-export type LoginDeletionPolicy = 'exclusive_only' | 'keep_all';
-export const LOGIN_DELETION_POLICY: LoginDeletionPolicy = 'exclusive_only';
-
-export const LOGIN_DELETION_TEXT: Record<LoginDeletionPolicy, string> = {
-  exclusive_only: 'Os logins que existem somente nesta loja são apagados. Quem também participa de outra loja mantém o login.',
-  keep_all: 'Os logins das pessoas são mantidos; elas perdem o acesso a esta loja.',
-};
-
-const KEEP_REASON: Record<string, string> = {
-  admin_da_plataforma: 'é administrador da plataforma',
-  tem_outra_loja: 'participa de outra loja',
-  autor_no_log_de_auditoria: 'aparece no registro de auditoria',
-};
-export const keepReasonLabel = (reason: string | null | undefined): string =>
-  reason ? KEEP_REASON[reason] ?? reason.replace(/_/g, ' ') : '';
+export const LOGIN_DELETION_TEXT = 'Todos os logins da loja serão apagados, inclusive os de quem também é dono de outra loja. O aceite dos Termos vai junto.';
 
 /**
  * Confirmação: o nome digitado tem de ser o nome exato da loja. Como no servidor, só os espaços
@@ -42,12 +28,12 @@ const LABELS: Record<string, string> = {
   stock_balances: 'Saldos por depósito', simulations: 'Simulações', terms_acceptances: 'Aceites dos Termos',
   admin_audit_logs: 'Registro de auditoria',
 };
-const BUCKETS: Record<string, string> = { products: 'Imagens (produtos, orçamentos e logo)', 'producao-anexos': 'Anexos de produção' };
+const BUCKETS: Record<string, string> = { products: 'Imagens (produtos, orçamentos e logo)', 'producao-anexos': 'Anexos de produção', boletos: 'Anexos de boleto' };
 
 export const deletionLabel = (key: string): string => LABELS[key] ?? key.replace(/_/g, ' ');
 
 export interface CountLine { key: string; label: string; count: number }
-export interface PreviewLogin { userId: string; email: string; role: string; remove: boolean; reason: string }
+export interface PreviewLogin { userId: string; email: string; role: string }
 
 export interface DeletionPreview {
   /** Nome da loja como o servidor o conhece (é o que precisa ser digitado). */
@@ -60,6 +46,8 @@ export interface DeletionPreview {
   retained: CountLine[];
   /** Motivo que impede excluir (o botão fica desabilitado). */
   blocker: string | null;
+  /** Aviso do servidor: lojas que ficarão sem dono (login apagado mesmo sendo dono de outra loja). */
+  warning: string | null;
 }
 
 const lines = (map: unknown, label: (k: string) => string): CountLine[] =>
@@ -77,11 +65,15 @@ export const parseDeletionPreview = (preview: any, fallbackName: string): Deleti
     userId: String(l.user_id),
     email: String(l.email ?? ''),
     role: String(l.role ?? ''),
-    remove: l.action === 'apagar',
-    reason: keepReasonLabel(l.reason),
   })),
   retained: lines(preview?.retained, deletionLabel),
   blocker: preview?.blocker ? String(preview.blocker) : null,
+  warning: (() => {
+    if (preview?.warning) return String(preview.warning);
+    const stores = Array.isArray(preview?.stores_without_owner) ? preview.stores_without_owner : [];
+    if (stores.length) return `As seguintes lojas ficarão sem dono: ${stores.join(', ')}.`;
+    return null;
+  })(),
 });
 
 export interface DeletionOutcome {
