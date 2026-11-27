@@ -103,7 +103,7 @@ Seguem pendentes: duração do trial, MFA, SSO e +tag, e-mail de colegas, dados 
 - **Banco `supabase-dev`:** 047b e 048–063 aplicadas em 27/11 com aprovação do dono (snapshot no schema `snapshot_20261127`; ver `database/migrations/APLICADAS.md`).
 - **Fora do lançamento:** pagamento manual no painel (cobrança adiada); link de avaliação como campo da loja; anexos de OS órfãos após excluir venda (A14, retenção LGPD).
 - **Decisões novas (27/11):** limite de desconto do vendedor **aprovado** (por loja, definido pelo dono da loja, padrão 10%, conferido no `create_sale`; migração 064 em implementação e revisão, **não aplicada**). Preço de tabela obrigatório e teto de valor por venda **reprovados**. Taxa sem `card_fees` = só 0, **confirmada**.
-- **Aberto (D4):** sem preço de tabela, o vendedor contorna o limite baixando o preço unitário ou usando Item Avulso. Aguarda decisão do dono.
+- **D4 decidido (27/11, opção C):** o limite vale só para o campo de desconto. Reduzir o preço no PDV e usar Item Avulso continuam permitidos; o dono aceita esse risco.
 - **Bloqueado pelo dono:** e-mail completo dos colegas na equipe (decisão 32), `TERMS_URL` e número do WhatsApp, além das perguntas pendentes acima.
 
 ## Riscos registrados por Segurança (sem mudar a decisão)
