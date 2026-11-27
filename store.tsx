@@ -507,6 +507,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [isInitialized]);
 
   const checkRecurringFixedAccounts = async (currentTransactions: Transaction[]) => {
+    // Lançamentos recorrentes são do dono/gerente: o vendedor não insere em transactions (059).
+    if (!isManager) return;
     const today = new Date();
     const currentMonth = today.getMonth();
     const currentYear = today.getFullYear();
@@ -1098,11 +1100,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       s = { ...s, deliveryType: 'PICKUP' };
     }
 
-    // Valores no formato que o create_sale (060) confere: centavos, desconto entre 0 e o subtotal,
+    // Valores no formato que o create_sale (060) confere: centavos, quantidade inteira > 0,
     // total = subtotal − desconto, à vista sem entrada/restante, dividido com restante = total − entrada.
-    const subtotal = s.items.reduce((acc, i) => acc + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0), 0);
-    const discount = roundMoney(Math.min(Math.max(0, Number(s.discount) || 0), subtotal));
-    const total = roundMoney(Math.max(0, subtotal - discount));
+    const qty = (i: SaleItem) => Number(i.quantity);
+    if (s.items.some(i => !Number.isInteger(qty(i)) || qty(i) <= 0)) {
+      addNotification('A quantidade de cada item deve ser maior que zero.', 'error');
+      return false;
+    }
+    const subtotal = s.items.reduce((acc, i) => acc + qty(i) * (Number(i.unitPrice) || 0), 0);
+    const discount = roundMoney(Number(s.discount) || 0);
+    if (discount < 0 || discount > roundMoney(subtotal)) {
+      addNotification(`O desconto deve ficar entre 0 e o subtotal (${roundMoney(subtotal).toFixed(2)}).`, 'error');
+      return false;
+    }
+    const total = roundMoney(subtotal - discount);
+    // A tela calcula o total; se divergir dos itens, mostra o erro em vez de corrigir em silêncio.
+    if (Math.abs((Number(s.total) || 0) - total) > 0.01) {
+      addNotification(`O total da venda não confere com os itens (calculado: ${total.toFixed(2)}).`, 'error');
+      return false;
+    }
     const partial = s.paymentType === 'PARTIAL';
     const downPayment = partial ? roundMoney(Math.min(Math.max(0, Number(s.downPayment) || 0), total)) : 0;
     s = {
@@ -1146,8 +1162,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         product_id: i.productId || null,
         product_name: i.productName || 'Item sem nome',
         description: i.description,
-        quantity: i.quantity || 1,
-        unit_price: i.unitPrice || 0,
+        quantity: qty(i),
+        unit_price: Number(i.unitPrice) || 0,
         category: i.category || 'Geral',
         service_type: i.serviceType,
         service_specs: typeof i.serviceSpecs === 'object' ? JSON.stringify(i.serviceSpecs) : i.serviceSpecs,
