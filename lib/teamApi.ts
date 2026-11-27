@@ -17,14 +17,18 @@ export interface StoreMember {
   createdAt: string;
 }
 
-/** Prefixo combinado com o Backend para o erro de limite de vendedores do plano. */
+/** Prefixos combinados com o Backend (ERRCODE P0001; o manage-users devolve 409 com a mesma mensagem). */
 export const SELLER_LIMIT_ERROR_PREFIX = 'LIMITE_VENDEDORES:';
+const TEAM_ERROR_PREFIXES = [SELLER_LIMIT_ERROR_PREFIX, 'UMA_LOJA_POR_DONO:'];
 
-/** Troca o código técnico do erro de limite por uma frase para a tela. */
-export const friendlyTeamError = (message: string): string =>
-  message.startsWith(SELLER_LIMIT_ERROR_PREFIX)
-    ? message.slice(SELLER_LIMIT_ERROR_PREFIX.length).trim() || 'O plano da loja atingiu o limite de vendedores.'
-    : message;
+/** Troca o código técnico do erro por uma frase para a tela. */
+export const friendlyTeamError = (message: string): string => {
+  const prefix = TEAM_ERROR_PREFIXES.find(p => message.startsWith(p));
+  if (!prefix) return message;
+  const rest = message.slice(prefix.length).trim();
+  if (rest) return rest;
+  return prefix === SELLER_LIMIT_ERROR_PREFIX ? 'O plano da loja atingiu o limite de vendedores.' : 'Este dono já tem uma loja.';
+};
 
 export const listStoreMembers = async (storeId: string): Promise<StoreMember[]> => {
   const { data, error } = await supabase.rpc('list_store_members', { p_store: storeId });
@@ -84,7 +88,7 @@ export const updateStoreMember = async (storeId: string, userId: string, role: S
 
 export const removeStoreMember = async (storeId: string, userId: string) => {
   const { error } = await supabase.rpc('remove_store_member', { p_store: storeId, p_user: userId });
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(friendlyTeamError(error.message));
 };
 
 /** Mascara o e-mail para quem não é admin da plataforma (ex.: j***@dominio.com). */

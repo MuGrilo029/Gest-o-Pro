@@ -35,20 +35,21 @@ export const Login: React.FC = () => {
       }
 
       // Cadastro que aguardava confirmação de e-mail: o teste de 1 hora começa agora
-      // Aceite dos Termos feito no cadastro, gravado agora que há sessão (decisão 47).
+      const pendingStore = localStorage.getItem(PENDING_TRIAL_KEY);
+      if (pendingStore) {
+        const { error: rpcError } = await supabase.rpc('start_self_trial', { p_name: pendingStore });
+        if (rpcError) throw new Error(rpcError.message);
+        localStorage.removeItem(PENDING_TRIAL_KEY);
+      }
+
+      // Aceite dos Termos feito no cadastro, gravado agora que há sessão e loja (decisão 47).
       const pendingTerms = localStorage.getItem(PENDING_TERMS_KEY);
       if (pendingTerms) {
         await recordTermsAcceptance(pendingTerms);
         localStorage.removeItem(PENDING_TERMS_KEY);
       }
 
-      const pendingStore = localStorage.getItem(PENDING_TRIAL_KEY);
-      if (pendingStore) {
-        const { error: rpcError } = await supabase.rpc('start_self_trial', { p_name: pendingStore });
-        if (rpcError) throw new Error(rpcError.message);
-        localStorage.removeItem(PENDING_TRIAL_KEY);
-        window.location.reload();
-      }
+      if (pendingStore) window.location.reload();
     } catch (err: any) {
       setError(err.message);
     } finally {

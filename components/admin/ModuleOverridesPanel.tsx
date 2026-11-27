@@ -48,7 +48,7 @@ export const ModuleOverridesPanel: React.FC<{ storeId: string }> = ({ storeId })
       {mods.map(m => (
         <li key={m.key} className="flex flex-wrap items-center justify-between gap-2 py-2">
           <div className="min-w-0">
-            <p className="font-medium text-wine-950 dark:text-white">{NAME[m.key] ?? m.key}</p>
+            <p className="font-medium text-wine-950 dark:text-white">{NAME[m.key] ?? m.label ?? m.key}</p>
             <p className="text-xs text-wine-500 dark:text-slate-400">
               {m.core ? 'Essencial: sempre ligado' : m.enabled ? 'Ligado' : 'Desligado'}
               {m.override === 'grant' && ' · ligado manualmente'}

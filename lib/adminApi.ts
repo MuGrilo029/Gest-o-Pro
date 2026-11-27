@@ -18,11 +18,20 @@ export type AdminCall<T> = { available: true; data: T } | { available: false };
 export const isMissingFunction = (error: any) =>
   !!error && (error.code === 'PGRST202' || error.code === '42883' || /function .* does not exist|Could not find the function/i.test(error.message || ''));
 
+/** Prefixos fixos das mensagens de erro do banco (ERRCODE P0001), combinados com o Backend. */
+export const DB_ERROR_PREFIXES = ['LIMITE_VENDEDORES:', 'UMA_LOJA_POR_DONO:', 'MODULO_CORE:', 'ESTOQUE_DEPOSITO:'];
+
+/** Tira o prefixo técnico e deixa só a frase para a tela. */
+export const friendlyDbError = (message: string): string => {
+  const prefix = DB_ERROR_PREFIXES.find(p => message.startsWith(p));
+  return prefix ? message.slice(prefix.length).trim() || message : message;
+};
+
 export const callAdminFunction = async <T>(name: string, params?: Record<string, unknown>): Promise<AdminCall<T>> => {
   const { data, error } = await supabase.rpc(name, params ?? {});
   if (error) {
     if (isMissingFunction(error)) return { available: false };
-    throw new Error(error.message);
+    throw new Error(friendlyDbError(error.message));
   }
   return { available: true, data: data as T };
 };
@@ -69,7 +78,8 @@ const toNum = (v: unknown) => (v === null || v === undefined || v === '' ? null 
 export const mapStoreRow = (r: any): AdminStoreRow => ({
   id: r.id ?? r.store_id,
   name: r.name ?? '',
-  status: (r.status ?? 'active') as StoreStatus,
+  // effective_status considera prazo vencido; status é o gravado.
+  status: (r.effective_status ?? r.status ?? 'active') as StoreStatus,
   plan: r.plano ?? r.plan_id ?? null,
   subscriptionStatus: r.assinatura_status ?? null,
   endsAt: toDate(r.fim) ?? toDate(r.current_period_end) ?? toDate(r.trial_ends_at) ?? toDate(r.valid_until),
@@ -138,12 +148,12 @@ export const createStore = async (input: CreateStoreInput): Promise<CreateStoreR
   const storeId = row?.store_id as string;
   if (!storeId) throw new Error('O banco não devolveu a loja criada.');
   if (row.account_exists) return { storeId, accountCreated: false, temporaryPassword: null };
+  // Sem senha: o manage-users usa a provisória 12345678 quando quem chama é o admin (contrato do Backend).
   const created = await callManageUsers({
     action: 'create_member',
     store_id: storeId,
     email: input.email.trim(),
     name: input.ownerName.trim() || input.storeName.trim(),
-    password: DEFAULT_TEMP_PASSWORD,
     role: 'OWNER',
     permissions: [],
   });
@@ -178,7 +188,10 @@ export type OverrideState = 'grant' | 'revoke' | null;
 
 export interface AdminModuleState {
   key: ModuleKey | 'brand';
+  label?: string;
   enabled: boolean;
+  /** O que o plano daria sem override. */
+  planEnabled?: boolean;
   core: boolean;
   override: OverrideState;
 }
@@ -194,6 +207,8 @@ export const fetchStoreModules = async (storeId: string): Promise<AdminModuleSta
   if (direct.available) {
     return (direct.data || []).map(r => ({
       key: r.module_key,
+      label: r.label ?? undefined,
+      planEnabled: r.plan_enabled ?? undefined,
       enabled: !!r.enabled,
       core: !!r.core,
       override: (r.override ?? null) as OverrideState,
