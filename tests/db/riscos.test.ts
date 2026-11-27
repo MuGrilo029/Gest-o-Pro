@@ -1,4 +1,4 @@
-// Riscos de docs/riscos-seguranca.md cobertos no PGlite (migrações 001–063): A5, A10/A13 e impersonação × loja ativa.
+// Riscos de docs/riscos-seguranca.md cobertos no PGlite (migrações 001–064): A5, A10/A13 e impersonação × loja ativa.
 // A3 (bucket products), A9 (exclusão e configuração por papel) e A11 (producao-anexos) estão em rls.test.ts.
 // Papéis: dono, gerente e vendedor da loja A; dono da loja B; admin da plataforma.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -323,6 +323,105 @@ describe('delete_sale: exclusão de venda numa transação (063)', () => {
     expect(await t.sql(`SELECT 1 FROM stock_movements WHERE type = 'RETURN' AND observations LIKE $1`, [`%#${id.slice(0, 4)}%`])).toHaveLength(0);
     await t.as(ownerA, `SELECT delete_sale($1)`, [id]);
     expect(await stock()).toEqual({ qty: 10, variant: 5 });
+  });
+});
+
+describe('D4: limite de desconto do vendedor por loja (064)', () => {
+  const args = (discount: number, subtotal: number) => [
+    JSON.stringify({ total: Math.round((subtotal - discount) * 100) / 100, discount, payment_type: 'FULL', payment_method: 'PIX' }),
+    JSON.stringify([{ product_name: 'Avulso', quantity: 2, unit_price: subtotal / 2 }]),
+  ];
+  const sale = (who: string, discount: number, subtotal = 200) =>
+    t.as(who, `SELECT create_sale($1::jsonb, $2::jsonb) r`, args(discount, subtotal));
+  const saleFails = (who: string, discount: number, subtotal = 200) =>
+    t.fails(who, `SELECT create_sale($1::jsonb, $2::jsonb)`, args(discount, subtotal));
+  const limit = async (s: string) => Number((await t.sql(`SELECT seller_max_discount_percent l FROM stores WHERE id = $1`, [s]))[0].l);
+  const setLimit = (who: string, v: number) => t.as(who, `SELECT set_seller_discount_limit($1::numeric) l`, [String(v)]);
+  afterAll(async () => { await t.sql(`UPDATE stores SET seller_max_discount_percent = 10`); });
+
+  it('padrão 10 e todos os papéis da loja leem o limite', async () => {
+    for (const who of [ownerA, managerA, sellerA]) {
+      const rows = await t.as(who, `SELECT seller_max_discount_percent::float8 l FROM stores WHERE id = $1`, [storeA]);
+      expect(rows, who).toEqual([{ l: 10 }]);
+    }
+    expect(await t.as(ownerB, `SELECT id FROM stores WHERE id = $1`, [storeA])).toHaveLength(0);
+  });
+
+  it('vendedor com 10% passa (com 1 centavo de tolerância); acima é recusado e nada é gravado', async () => {
+    await sale(sellerA, 20);
+    await sale(sellerA, 20.01);
+    const before = (await t.sql(`SELECT count(*)::int n FROM sales`))[0].n;
+    expect(await saleFails(sellerA, 20.02)).toMatch(/Desconto acima do limite do vendedor \(10 por cento\): máximo 20\.00/);
+    expect(await saleFails(sellerA, 200)).toMatch(/acima do limite/);
+    expect((await t.sql(`SELECT count(*)::int n FROM sales`))[0].n).toBe(before);
+  });
+
+  it('gerente, dono e admin impersonando passam do limite', async () => {
+    await t.as(admin, `SELECT set_active_store($1)`, [storeA]);
+    for (const who of [managerA, ownerA, admin]) {
+      const [{ r }] = await sale(who, 150);
+      expect(r.itens, who).toBe(1);
+    }
+  });
+
+  it('limite alterado pelo dono vale na hora: 0, 7.5 e 100', async () => {
+    await setLimit(ownerA, 0);
+    expect(await saleFails(sellerA, 0.02)).toMatch(/\(0 por cento\)/);
+    await sale(sellerA, 0);
+    await setLimit(ownerA, 7.5);
+    await sale(sellerA, 15);
+    expect(await saleFails(sellerA, 15.02)).toMatch(/\(7\.5 por cento\): máximo 15\.00/);
+    await setLimit(ownerA, 100);
+    await sale(sellerA, 200);
+    expect(await limit(storeA)).toBe(100);
+    expect(await limit(storeB)).toBe(10);
+    await setLimit(ownerA, 10);
+  });
+
+  it('fora de 0..100, NaN, Infinity e nulo recusados (RPC e coluna)', async () => {
+    for (const bad of ['-0.01', '100.01', 'NaN', 'Infinity', '-Infinity']) {
+      expect(await t.fails(ownerA, `SELECT set_seller_discount_limit($1::numeric)`, [bad]), bad).toMatch(/entre 0 e 100/);
+      await expect(t.sql(`UPDATE stores SET seller_max_discount_percent = $2::numeric WHERE id = $1`, [storeA, bad]), bad).rejects.toThrow(/stores_seller_max_discount_faixa/);
+    }
+    expect(await t.fails(ownerA, `SELECT set_seller_discount_limit(NULL)`)).toMatch(/entre 0 e 100/);
+    await expect(t.sql(`UPDATE stores SET seller_max_discount_percent = NULL WHERE id = $1`, [storeA])).rejects.toThrow(/null/i);
+    expect(await limit(storeA)).toBe(10);
+  });
+
+  it('gerente, vendedor e anônimo não alteram; UPDATE direto não pega nem para o dono', async () => {
+    for (const who of [managerA, sellerA]) {
+      expect(await t.fails(who, `SELECT set_seller_discount_limit(90)`), who).toMatch(/Só o dono da loja altera o limite/);
+    }
+    expect(await t.fails(null, `SELECT set_seller_discount_limit(90)`)).toMatch(/permission denied/);
+    for (const who of [ownerA, managerA, sellerA, ownerB]) {
+      expect(await t.as(who, `UPDATE stores SET seller_max_discount_percent = 90 WHERE id = $1 RETURNING id`, [storeA]), who).toHaveLength(0);
+    }
+    expect(await limit(storeA)).toBe(10);
+  });
+
+  it('dono da loja B só altera a própria; admin só a loja impersonada', async () => {
+    await setLimit(ownerB, 55);
+    expect([await limit(storeA), await limit(storeB)]).toEqual([10, 55]);
+    await t.as(admin, `SELECT set_active_store($1)`, [storeB]);
+    expect(await t.fails(admin, `UPDATE stores SET seller_max_discount_percent = 90 WHERE id = $1`, [storeA])).toMatch(/Só o dono da loja/);
+    await setLimit(admin, 30);
+    expect([await limit(storeA), await limit(storeB)]).toEqual([10, 30]);
+  });
+
+  it('vendedor não aplica desconto por outro caminho: UPDATE da venda e edit_sale_items', async () => {
+    const [{ r }] = await sale(sellerA, 0);
+    expect(await t.fails(sellerA, `UPDATE sales SET discount = 100, total = 100 WHERE id = $1`, [r.sale_id])).toMatch(/dono ou o gerente/);
+    expect(await t.fails(sellerA, `SELECT edit_sale_items($1, $2::jsonb, 100, 100)`, [r.sale_id, JSON.stringify([{ product_name: 'X', quantity: 2, unit_price: 100 }])])).toMatch(/dono ou gerente/);
+  });
+
+  // Limite conhecido (decisão do dono): o preço unitário é livre, então o limite pode ser contornado.
+  it('conhecido: vendedor ainda vende com preço unitário reduzido, sem desconto declarado', async () => {
+    const [{ id }] = await t.sql(`INSERT INTO products (name, price, quantity, store_id) VALUES ('Tabela 100', 100, 5, $1) RETURNING id`, [storeA]);
+    const [{ r }] = await t.as(sellerA, `SELECT create_sale($1::jsonb, $2::jsonb) r`, [
+      JSON.stringify({ total: 1, payment_type: 'FULL', payment_method: 'PIX' }),
+      JSON.stringify([{ product_id: id, product_name: 'Tabela 100', quantity: 1, unit_price: 1 }]),
+    ]);
+    expect(r.itens).toBe(1);
   });
 });
 
