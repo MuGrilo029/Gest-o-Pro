@@ -206,8 +206,9 @@ describe('limite de vendedores e downgrade (049)', () => {
     await t.sql(`DELETE FROM store_members WHERE store_id = $1 AND user_id IN ($2, $3)`, [store, sellers[1], sellers[2]]);
     const [{ r }] = await t.as(admin, `SELECT admin_request_plan_change($1, 'inicio') r`, [store]);
     expect(r.kind).toBe('downgrade');
-    const [{ enabled }] = await t.sql(`SELECT enabled FROM store_modules WHERE store_id = $1 AND module_key = 'financial'`, [store]);
-    expect(enabled).toBe(false);
+    const mods = await t.sql(`SELECT module_key, enabled FROM store_modules WHERE store_id = $1 AND module_key IN ('financial', 'boletos') ORDER BY 1`, [store]);
+    // Boletos sai no Início; o Financeiro fica (065).
+    expect(mods).toEqual([{ module_key: 'boletos', enabled: false }, { module_key: 'financial', enabled: true }]);
   });
 
   it('loja em trial sem assinatura segue o limite do Avançado (6)', async () => {
@@ -353,7 +354,7 @@ describe('venda numa transação (055)', () => {
     await t.createStore('Loja Início', o, { plan: 'inicio' });
     const [{ r }] = await t.as(o, `SELECT create_sale('{"total":10,"payment_type":"FULL"}'::jsonb, $1::jsonb) r`,
       [JSON.stringify([{ product_name: 'Montagem', quantity: 1, unit_price: 10, category: 'Serviços' }])]);
-    expect(r).toMatchObject({ ordens_producao: 0, lancamentos: 0 });
+    expect(r).toMatchObject({ ordens_producao: 0, lancamentos: 1 });  // Financeiro no Início (065)
   });
 });
 

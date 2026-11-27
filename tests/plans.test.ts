@@ -29,9 +29,11 @@ describe('planos: módulos', () => {
     }
   });
 
-  it('Início não tem Financeiro, Entregas nem Produção; Avançado tem Entregas e sob medida', () => {
+  it('Início tem Financeiro, sem Boletos, Relatórios, Entregas nem Produção; Avançado tem Entregas e sob medida', () => {
     const inicio = getPlan('inicio').modules;
-    expect(inicio).not.toContain('financial');
+    expect(inicio).toContain('financial');
+    expect(inicio).not.toContain('boletos');
+    expect(inicio).not.toContain('reports');
     expect(inicio).not.toContain('deliveries');
     expect(inicio).not.toContain('production');
     const avancado = getPlan('avancado').modules;
