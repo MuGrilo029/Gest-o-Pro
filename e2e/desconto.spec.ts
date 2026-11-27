@@ -90,6 +90,8 @@ test.describe('limite configurado pelo dono (064)', () => {
     await page.getByRole('alertdialog').getByRole('button').last().click();
 
     await page.getByRole('button', { name: /^sair$/i }).click();
+    // Espera o logout terminar antes de abrir a tela de novo.
+    await expect(page.getByRole('button', { name: /^entrar no sistema$/i })).toBeVisible();
     await asSeller(page);
     await openPdv(page);
     await page.getByLabel('Desconto (R$)').fill('301');
