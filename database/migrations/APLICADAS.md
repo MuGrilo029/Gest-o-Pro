@@ -65,3 +65,12 @@ Método: o banco local (PGlite) foi montado com `MASTER_SCHEMA.sql.example` + as
 ### A aplicar (escritas e testadas só no PGlite; nenhuma aplicada)
 
 047b, 048, 049, 050, 051, 052, 053, 054, 055, 056, 057, 058, 059, 060, 061, 062, 063 — nesta ordem. A 060 só redefine create_sale e cria _is_finite/_is_card_method/_is_debit_method (nenhuma tabela alterada). A 061 adiciona CHECK NOT VALID de finitude em sales, sale_items e transactions (sem mexer em dados). A 062 adiciona CHECK NOT VALID de 0 a 100 em card_fees.percentage. A 063 cria delete_sale e tira o DELETE direto de sales (policy sales_delete e privilégio); só junto com o front usando delete_sale. A 059 (tabelas: transactions, sales, sale_items; apaga _seller_sale_tx_ok) só junto com o front usando create_sale no addSale; sem isso, o vendedor não consegue vender. Ver a lista com as tabelas alteradas no relatório do Backend ao SeniorDev.
+
+## Aplicação de 27/11/2026 (SeniorDev, com aprovação do dono via Tonny Stark)
+
+- **Snapshot antes:** schema `snapshot_20261127` no próprio banco (36 tabelas de `public` copiadas, mais `_policies` 57, `_functions` 68, `_grants`, `_triggers` e `_storage_objects_meta`), sem acesso para anon e authenticated. Cópia local em JSON fora do repositório.
+- **Lote 1** (compatível com o front antigo): 047b, 048, 049, 050, 051, 052, 053, 054, 055, 056, 057, 058, 062 — todas sem erro, nesta ordem.
+- **Deploy:** branch `preparacao-lancamento` (cdae04f) publicada em produção na Vercel (`gest-o-pro-three.vercel.app`), a partir da branch, sem mudar a `main`.
+- **Lote 2** (só com o front novo): 059, 060, 061, 063 — sem erro, aplicadas logo antes da publicação.
+- **Verificação:** planos 1/3/6 e anual = 10×; `custom` inativo; core = dashboard, sales, customers, inventory, settings; `delete_sale` existe e `_seller_sale_tx_ok` não; `sales` sem policy nem GRANT de DELETE para authenticated; trigger `tg_sales_seller_guard`; CHECKs de finitude e de `card_fees`; anon sem EXECUTE em `create_sale` e `delete_sale`. Teste em transação desfeita, como vendedor real: INSERT direto em `sales` e em `transactions`, DELETE direto em `sales` e `delete_sale` foram recusados.
+- **Não aplicadas:** 023, 026, 027 e 029 (pendentes ou substituídas, ver acima). `purge_unconverted_trial` (052) existe, mas não está agendada nem foi executada.
