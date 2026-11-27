@@ -5,6 +5,8 @@
 -- login que ela mesma criou. request_id torna a repetição segura (stores.creation_request_id, único).
 -- admin_create_client passa a recusar e-mail sem login (nunca mais cria loja órfã, nem pelo front antigo).
 -- Nenhuma senha de conta existente é alterada.
+-- Conta com e-mail não confirmado é recusada: qualquer pessoa cadastra o e-mail de outra no autocadastro e, se a
+-- loja fosse ligada a essa conta, entraria como dona quando a vítima clicasse na confirmação.
 -- Idempotente.
 
 BEGIN;
@@ -21,10 +23,11 @@ DECLARE
   v_user uuid;
   v_marker text;
   v_signed boolean;
+  v_confirmed boolean;
 BEGIN
   PERFORM public._require_platform_admin();
-  SELECT u.id, u.raw_app_meta_data->>'gp_store_request', u.last_sign_in_at IS NOT NULL
-    INTO v_user, v_marker, v_signed FROM auth.users u WHERE lower(u.email) = v_email;
+  SELECT u.id, u.raw_app_meta_data->>'gp_store_request', u.last_sign_in_at IS NOT NULL, u.email_confirmed_at IS NOT NULL
+    INTO v_user, v_marker, v_signed, v_confirmed FROM auth.users u WHERE lower(u.email) = v_email;
   RETURN jsonb_build_object(
     'user_id', v_user,
     'memberships', (SELECT count(*) FROM public.store_members m WHERE m.user_id = v_user),
@@ -33,7 +36,8 @@ BEGIN
                                    AND (p_request_id IS NULL OR s.creation_request_id IS DISTINCT FROM p_request_id)),
     'request_store_id', (SELECT s.id FROM public.stores s WHERE s.creation_request_id = p_request_id),
     'marker', v_marker,
-    'signed_in', COALESCE(v_signed, false));
+    'signed_in', COALESCE(v_signed, false),
+    'confirmed', COALESCE(v_confirmed, false));
 END $$;
 
 CREATE OR REPLACE FUNCTION public.admin_create_store_with_owner(p_request_id uuid, p_owner uuid, p_store_name text,
@@ -107,6 +111,9 @@ BEGIN
   -- 067: nunca cria loja sem dono. O login é criado antes, pela função manage-users (ação create_store).
   IF v_user IS NULL THEN
     RAISE EXCEPTION 'CONTA_INEXISTENTE: este e-mail ainda não tem login. Crie a loja pelo painel, que cria o login junto.' USING ERRCODE = 'P0001';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = v_user AND u.email_confirmed_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'CONTA_NAO_CONFIRMADA: este e-mail tem um cadastro ainda não confirmado. Peça para a pessoa confirmar o e-mail, ou remova o cadastro pendente, e tente de novo.' USING ERRCODE = 'P0001';
   END IF;
   IF v_user IS NOT NULL AND EXISTS (SELECT 1 FROM public.store_members m WHERE m.user_id = v_user AND m.role = 'OWNER') THEN
     RAISE EXCEPTION 'UMA_LOJA_POR_DONO: esta conta já é dona de outra loja.' USING ERRCODE = 'P0001';

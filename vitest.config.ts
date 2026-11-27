@@ -10,7 +10,9 @@ const edgeDoubles = {
     const slash = (p: string) => p.split(path.sep).join('/');
     if (!slash(id).includes('/supabase/functions/')) return null;
     const double = slash(path.resolve(__dirname, 'tests/doubles/supabaseEdge.ts'));
-    return code.replace('https://esm.sh/@supabase/supabase-js@2.39.0', double);
+    return code
+      .replace('https://esm.sh/@supabase/supabase-js@2.39.0', double)
+      .replace('https://esm.sh/web-push@3.6.7', slash(path.resolve(__dirname, 'tests/doubles/webpush.ts')));
   },
 };
 
