@@ -49,7 +49,7 @@ Migrações são escritas e testadas só em banco de teste/local.
 | 39 | Auditoria 5 anos é decisão interna; sem exportação. | Manter retenção; nenhuma tela de exportação. | — | pronto |
 | 40 | Admin cria usuários em qualquer loja; senha provisória 12345678, troca depois. | `manage-users` aceita senha padrão 12345678. Risco registrado; troca obrigatória no 1º acesso **só com confirmação**. | B, S | a fazer |
 | 41 | Painel atual (STORE_ADMIN, AdminDashboard, ClientesArea) será refeito. | Novo painel admin enxuto (assinaturas + ações da 34). | F, B | a fazer |
-| 42 | Senha mínima 8, sem exigir números. | Alinhar `lib/utils.ts`, `SelfSignup`, `manage-users` e config do Auth em 8 sem regra de número. Risco registrado. | B, F, S | a fazer |
+| 42 | Senha mínima 8, sem exigir números. | Alinhar `lib/utils.ts`, `SelfSignup`, `manage-users` e config do Auth em 8 sem regra de número. Auth do `gestao-pro-teste` já em 8 (27/11). Proteção contra senha vazada exige plano Pro. Risco registrado. | B, F, S | a fazer |
 | 43 | MFA (quem; app ou SMS): **sem resposta**. | Nada implementado. | Dono | bloqueado pelo dono |
 | 44 | Sem Turnstile. | Remover/desligar código de captcha e doc `captcha-turnstile.md` fica como referência. | F | a fazer |
 | 45 | Normalização de e-mail (+tag) e SSO: **sem resposta**. | Nada implementado. | Dono | bloqueado pelo dono |
@@ -62,7 +62,7 @@ Migrações são escritas e testadas só em banco de teste/local.
 | 51 | Backup nativo do Supabase (PITR) basta. | Confirmar PITR ligado no painel. | S | a fazer |
 | 52 | Corrigir pendências antes de publicar. | Este plano. | SD | a fazer |
 | 53 | Domínio, razão social e CNPJ: **não existem**. | Termos e rodapé com campos a preencher. | Dono | bloqueado pelo dono |
-| 54 | Lojas reais `com-stillo-moveis` e `royal-home` não podem ser tocadas. | Testes só em banco local (PGlite) até existir banco de teste. Guarda por **id da loja** (os slugs no banco não batem com esses nomes: `loja-principal` e vazio), nunca por slug. | Todos | a fazer |
+| 54 | Lojas reais `com-stillo-moveis` e `royal-home` não podem ser tocadas. | **Revogada pelo dono (27/11):** todas as lojas do `supabase-dev` (projeto `gestao-pro-teste`) são de teste, inclusive COM STILLO e Royal Home. Migrações: teste no PGlite → export das tabelas afetadas → aplicação via Management API. | B, SD | pronto |
 | 55 | Bloqueadores de venda: estoque e financeiro. | E2E desses dois fluxos é condição de lançamento. | F, B | a fazer |
 | 56 | SeniorDev monta a ordem de entrega. | Ver "Ordem de execução". | SD | pronto |
 | 57 | E2E e pen-test antes do lançamento. | E2E (Playwright) dos fluxos core no banco de teste; pen-test por S. | F, S | a fazer |
@@ -81,7 +81,7 @@ Migrações são escritas e testadas só em banco de teste/local.
 | T2 Edge Functions publicadas; token do webhook; VAPID e segredos no Vault | Conferir versões publicadas e segredos (sem ler valores). Nenhum segredo no front. | Conferência + grep no bundle. | S | a fazer |
 | T3 RLS: `profiles`, MASTER_SCHEMA fora de uso, trigger de roles, 1 conta `is_platform_admin`, Realtime com RLS | MASTER_SCHEMA já virou `.example`. Demais: conferir no banco. | Teste de RLS automatizado. | S | a fazer (MASTER_SCHEMA: pronto) |
 | T4 CSP e cabeçalhos no `vercel.json` | Sem Turnstile, a CSP fica só com Supabase e domínio próprio. | Adicionar CSP em `vercel.json` (domínio definitivo pendente). | S | a fazer |
-| T5 Staging, banco de teste, CI/CD, Gitleaks, gate de deploy | **Não existe banco de teste:** o projeto acessado pelo MCP `supabase-dev` é PRODUÇÃO (tem as lojas reais). Testes em Postgres local (PGlite); criar projeto Supabase de teste precisa de aprovação. CI no GitHub Actions do repositório atual: tsc, build, Vitest, gitleaks. | Workflow `.github/workflows/ci.yml`. | S, B | a fazer |
+| T5 Staging, banco de teste, CI/CD, Gitleaks, gate de deploy | Banco de teste: projeto `gestao-pro-teste` (MCP `supabase-dev`), confirmado pelo dono como teste. Testes primeiro em PGlite. CI no GitHub Actions do repositório atual: tsc, build, Vitest, gitleaks. | Workflow `.github/workflows/ci.yml`. | S, B | a fazer |
 | T6 Refatorar `store.tsx`; padrões de commit/branch/co-autor; lint/format | Não refatorar `store.tsx` antes do lançamento. Commits convencionais em pt-BR; branch por frente a partir de `preparacao-lancamento`; trailer de co-autor OpenBot. | Seguir na revisão. | SD | pronto |
 | T7 Módulos 02/06/08/12/13/14/16; recuperação de senha; templates de notificação; latência/multi-região | Recuperação de senha pelo Auth do Supabase; templates em pt-BR; sem multi-região. | Conferir recuperação de senha no E2E. | B, F | a fazer |
 | T8 Observabilidade, rate limit, WAF; RPC ou REST | Rate limit nas Edge Functions feito (memória). Front usa RPC para escrita sensível. Logs do Supabase/Vercel bastam. | — | B | pronto (rate limit) |
