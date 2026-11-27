@@ -18,6 +18,12 @@ export const maxSellerDiscount = (subtotal: number, percent: number): number =>
 
 const brl = (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+/** Valor lido de stores.seller_max_discount_percent; ausente ou inválido (sem a 064) = padrão 10. */
+export const readDiscountPercent = (value: unknown): number => {
+  const n = value === null || value === undefined || value === '' ? NaN : Number(value);
+  return n >= 0 && n <= 100 ? n : DEFAULT_SELLER_DISCOUNT_PERCENT;
+};
+
 export const sellerDiscountProblem = (input: {
   role: StoreRole | null | undefined;
   isPlatformAdmin: boolean;

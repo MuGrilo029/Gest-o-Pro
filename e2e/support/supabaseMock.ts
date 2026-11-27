@@ -32,6 +32,8 @@ export interface MockStore {
   ownerEmail: string;
   endsAt: string | null;
   createdAt: string;
+  /** stores.seller_max_discount_percent (064); ausente = 10. */
+  maxDiscount?: number;
 }
 
 export interface MockMember { storeId: string; userId: string; email: string; name: string; role: 'OWNER' | 'MANAGER' | 'SELLER'; permissions: string[] }
@@ -255,6 +257,19 @@ const RPC: Record<string, RpcHandler> = {
     const subtotal = items.reduce((acc, i) => acc + Number(i.quantity) * Number(i.unit_price || 0), 0);
     const discount = Number(sale.discount || 0);
     if (discount < 0 || discount > subtotal + 0.005) return fail(`O desconto deve ficar entre 0 e o subtotal (${r2(subtotal)}).`);
+    // 064: limite do vendedor, com 1 centavo de tolerância.
+    {
+      const uid = db.currentUserId!;
+      const storeId = db.activeStore[uid];
+      const role = db.members.find(x => x.storeId === storeId && x.userId === uid)?.role;
+      if (role === 'SELLER') {
+        const pct = db.stores.find(s => s.id === storeId)?.maxDiscount ?? 10;
+        const max = r2(subtotal * pct / 100);
+        if (discount > max + 0.01) {
+          return { status: 403, body: { code: '42501', message: `Desconto acima do limite do vendedor (${pct} por cento): máximo ${max.toFixed(2)}. Peça ao gerente ou ao dono.` } };
+        }
+      }
+    }
     const total = r2(subtotal - discount);
     if ('total' in sale && Math.abs(Number(sale.total) - total) > 0.01) return fail(`O total da venda não confere com os itens (calculado: ${total}).`);
     if (!['FULL', 'PARTIAL'].includes(sale.payment_type)) return fail('Tipo de pagamento inválido.');
@@ -315,6 +330,20 @@ const RPC: Record<string, RpcHandler> = {
       }
     }
     return { body: { sale_id: sale.id, itens: items.length, encomendas: 0, ordens_producao: 0, entregas: 0, lancamentos, movimentos_estoque: movimentos } };
+  },
+  // set_seller_discount_limit (064): só o dono (ou admin na loja ativa).
+  set_seller_discount_limit: (a, db) => {
+    const fail = (status: number, code: string, message: string) => ({ status, body: { code, message } });
+    const uid = db.currentUserId;
+    if (!uid) return fail(401, '42501', 'Faça login para alterar o limite de desconto.');
+    const store = db.stores.find(s => s.id === db.activeStore[uid]);
+    if (!store) return fail(403, '42501', 'Sem loja ativa ou acesso bloqueado.');
+    const role = db.members.find(x => x.storeId === store.id && x.userId === uid)?.role;
+    if (!db.user()?.isPlatformAdmin && role !== 'OWNER') return fail(403, '42501', 'Só o dono da loja altera o limite de desconto.');
+    const p = Number(a.p_percent);
+    if (!(p >= 0 && p <= 100)) return fail(400, '22023', 'O limite de desconto deve ficar entre 0 e 100.');
+    store.maxDiscount = p;
+    return { body: p };
   },
   // delete_sale (063): só dono/gerente; devolve estoque e apaga tudo da venda numa chamada.
   delete_sale: (a, db) => {
@@ -430,6 +459,13 @@ export const installSupabaseMock = async (page: Page, db: MockDb) => {
       const filters = eqFilters(url);
       const match = (r: Row) => filters.every(([k, v]) => String(r[k]) === v);
       const wantsObject = (req.headers()['accept'] || '').includes('vnd.pgrst.object');
+
+      if (table === 'stores' && method === 'GET') {
+        const found = db.stores.filter(s => filters.every(([k, v]) => k !== 'id' || s.id === v))
+          .map(s => ({ id: s.id, name: s.name, seller_max_discount_percent: s.maxDiscount ?? 10 }));
+        if (wantsObject) return found.length ? json(route, 200, found[0]) : json(route, 406, { code: 'PGRST116', message: 'no rows' });
+        return json(route, 200, found);
+      }
 
       if (table === 'profiles' && method === 'GET') {
         const u = db.user();
