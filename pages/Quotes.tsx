@@ -1115,7 +1115,6 @@ export const Quotes: React.FC = () => {
             {/* PRINT TEMPLATE (Hidden from screen) */}
             {/* PRINT TEMPLATE (Hidden from screen) */}
             <style>{`
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
 @media print {
     @page { margin: 0; size: auto; }
     body * { visibility: hidden !important; height: 0 !important; overflow: hidden !important; }

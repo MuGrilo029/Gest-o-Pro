@@ -6,6 +6,7 @@ import { Truck, MapPin, Phone, Clock, Calendar, CheckCircle, Navigation, Edit2, 
 import { Delivery } from '../types';
 import { formatISO, formatCurrency } from '../lib/utils';
 import { ManagerOnly } from '../components/ManagerOnly';
+import { LocalQrCode } from '../components/LocalQrCode';
 
 const getWhatsAppLink = (notes?: string) => {
   const phoneMatch = notes?.match(/\(\d{2}\)\s\d{4,5}-\d{4}/);
@@ -76,11 +77,7 @@ const PrintableReceipt: React.FC<{ delivery: Delivery; company: any }> = ({ deli
         <div className="mt-4 pt-4 border-t border-dashed border-wine-300 flex flex-col items-center justify-center flex-1">
           <p className="text-[11px] font-bold text-wine-900 uppercase mb-4">Sua opinião é muito importante para nós!</p>
           <div className="bg-white p-2 border-2 border-wine-200 rounded-xl shadow-sm">
-            <img
-              src={`https://quickchart.io/qr?text=${encodeURIComponent('https://g.page/r/CcDa5AQjP8cvEAE/review')}&size=120&margin=1&ecLevel=H`}
-              alt="QR Code"
-              className="w-32 h-32"
-            />
+            <LocalQrCode text="https://g.page/r/CcDa5AQjP8cvEAE/review" size={120} className="w-32 h-32" />
           </div>
         </div>
       )}
