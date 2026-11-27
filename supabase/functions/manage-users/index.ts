@@ -4,6 +4,9 @@
 //
 //   create_member  -> cria a conta e coloca na loja
 //   set_password   -> define uma nova senha para alguém da loja
+//   create_store          -> (só admin) cria o login do dono e a loja, sem sobra se algo falhar (migração 067)
+//   delete_store_preview  -> (só admin) contagens do que a exclusão apaga e do que fica (migração 066)
+//   delete_store          -> (só admin) apaga dados, arquivos e logins elegíveis; repetível (migração 066)
 //
 // Quem pode:
 //   * Administrador da plataforma: qualquer papel, qualquer loja.
@@ -17,6 +20,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { allow, clientKey } from '../_shared/rateLimit.ts';
+import { createStore, deleteStore, previewDeleteStore } from '../_shared/storeAdmin.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -87,10 +91,20 @@ Deno.serve(async (req: Request) => {
     return fail('Requisição inválida.');
   }
 
+  const { data: isAdmin } = await caller.rpc('is_platform_admin');
+
+  // Ações do dono do SaaS: conferidas aqui e de novo em cada RPC no banco.
+  if (['create_store', 'delete_store_preview', 'delete_store'].includes(body?.action)) {
+    if (isAdmin !== true) return fail('Apenas o administrador da plataforma pode fazer isso.', 403);
+    const reply = body.action === 'create_store' ? await createStore(caller, admin, body, ADMIN_DEFAULT_PASSWORD)
+      : body.action === 'delete_store' ? await deleteStore(caller, admin, body)
+      : await previewDeleteStore(caller, body);
+    return json(reply.body, reply.status);
+  }
+
   const storeId = typeof body?.store_id === 'string' ? body.store_id : '';
   if (!UUID_RE.test(storeId)) return fail('Loja não informada.');
 
-  const { data: isAdmin } = await caller.rpc('is_platform_admin');
   const { data: isManager } = await caller.rpc('is_store_manager', { p_store: storeId });
   if (!isAdmin && !isManager) return fail('Sem permissão para gerenciar esta loja.', 403);
 
@@ -165,7 +179,7 @@ Deno.serve(async (req: Request) => {
       if (createdNow && userId) await admin.auth.admin.deleteUser(userId);
       // Regras do banco com mensagem para a tela (migrações 049 e 050).
       const msg = memberError.message || '';
-      if (msg.includes('LIMITE_VENDEDORES:') || msg.includes('UMA_LOJA_POR_DONO:')) return fail(msg, 409);
+      if (msg.includes('LIMITE_VENDEDORES:') || msg.includes('UMA_LOJA_POR_DONO:') || msg.includes('LOJA_EXCLUIDA:')) return fail(msg, 409);
       return fail('Não foi possível salvar o membro.', 500);
     }
 

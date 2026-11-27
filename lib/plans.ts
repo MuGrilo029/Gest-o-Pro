@@ -33,8 +33,10 @@ export interface PlanDefinition {
 /** Core fixo em todos os planos (decisão 14): não desliga por plano nem por override. */
 export const CORE_MODULES: PlanModuleKey[] = ['dashboard', 'sales', 'inventory', 'customers', 'settings'];
 const BASE_MODULES: PlanModuleKey[] = CORE_MODULES;
+/** Financeiro está em todos os planos (decisão de 27/11, migração 065); não é core: o override pode desligar. */
+const START_EXTRA: PlanModuleKey[] = ['financial'];
 /** Boletos, Fornecedores e Encomendas entram a partir do Crescimento (decisão 15). */
-const GROWTH_EXTRA: PlanModuleKey[] = ['financial', 'boletos', 'reports', 'production', 'quotes', 'suppliers', 'orders'];
+const GROWTH_EXTRA: PlanModuleKey[] = ['boletos', 'reports', 'production', 'quotes', 'suppliers', 'orders'];
 const ADVANCED_EXTRA: PlanModuleKey[] = ['deliveries', 'push_notifications', 'custom_production', 'brand'];
 
 export const PLANS: PlanDefinition[] = [
@@ -50,9 +52,10 @@ export const PLANS: PlanDefinition[] = [
       'Estoque',
       'Produtos',
       'Clientes',
+      'Financeiro (contas a pagar e a receber)',
       'Configurações',
     ],
-    modules: BASE_MODULES,
+    modules: [...BASE_MODULES, ...START_EXTRA],
   },
   {
     code: 'crescimento',
@@ -63,7 +66,6 @@ export const PLANS: PlanDefinition[] = [
     recommended: true,
     features: [
       'Tudo do Início',
-      'Financeiro',
       'Relatórios',
       'Produção',
       'Orçamentos / Cotações',
@@ -71,7 +73,7 @@ export const PLANS: PlanDefinition[] = [
       'Encomendas',
       'Boletos',
     ],
-    modules: [...BASE_MODULES, ...GROWTH_EXTRA],
+    modules: [...BASE_MODULES, ...START_EXTRA, ...GROWTH_EXTRA],
   },
   {
     code: 'avancado',
@@ -85,7 +87,7 @@ export const PLANS: PlanDefinition[] = [
       'Cor da marca',
       'Sob medida (seção separada dentro de Produção)',
     ],
-    modules: [...BASE_MODULES, ...GROWTH_EXTRA, ...ADVANCED_EXTRA],
+    modules: [...BASE_MODULES, ...START_EXTRA, ...GROWTH_EXTRA, ...ADVANCED_EXTRA],
   },
 ];
 
