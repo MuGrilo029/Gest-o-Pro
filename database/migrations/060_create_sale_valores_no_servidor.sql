@@ -10,11 +10,18 @@
 --     das parcelas (débito = 0 parcelas); dividido, no máximo a parte em cartão × maior % da loja (o PDV não envia
 --     as parcelas da entrada);
 --   * venda e lançamentos usam os valores calculados, nunca os enviados.
+--   * recusa NaN e ±Infinity em preço, total, desconto, entrada, restante e taxa (a 061 põe CHECK nas colunas);
+--   * loja sem card_fees: a taxa enviada vale de 0 até o total, só com cartão (o PDV calcula 0 nesse caso).
+--     Exigir card_fees ou aceitar só 0 é decisão de produto; registrado como pendência para o SeniorDev.
 -- Não muda: limite de desconto por papel e preço de tabela (TODO, docs/duvidas-dono.md D4).
 -- Idempotente (CREATE OR REPLACE). Não altera dados existentes.
 
 BEGIN;
 
+CREATE OR REPLACE FUNCTION public._is_finite(x numeric)
+RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path TO '' AS $$
+  SELECT x IS NOT NULL AND x > '-Infinity'::numeric AND x < 'Infinity'::numeric;  -- NaN dá falso
+$$;
 CREATE OR REPLACE FUNCTION public._is_card_method(p text)
 RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path TO '' AS $$
   SELECT p IS NOT NULL AND (p IN ('CREDIT_CARD', 'DEBIT_CARD') OR lower(p) LIKE '%cartão%' OR lower(p) LIKE '%cartao%');
@@ -64,6 +71,15 @@ BEGIN
   IF v_store IS NULL THEN RAISE EXCEPTION 'Sem loja ativa ou acesso bloqueado.' USING ERRCODE = '42501'; END IF;
   IF jsonb_typeof(p_items) IS DISTINCT FROM 'array' OR jsonb_array_length(p_items) = 0 THEN
     RAISE EXCEPTION 'Não é possível salvar uma venda sem itens.';
+  END IF;
+  -- NaN e ±Infinity: NaN é maior que tudo no Postgres e passaria pelas checagens de faixa (achado da Segurança).
+  IF NOT (public._is_finite(v_total) AND public._is_finite(v_down) AND public._is_finite(v_remaining)
+          AND public._is_finite(v_fee) AND public._is_finite(v_discount)) THEN
+    RAISE EXCEPTION 'Valores da venda inválidos.';
+  END IF;
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_items) e
+              WHERE NOT public._is_finite(COALESCE((e->>'unit_price')::numeric, 0))) THEN
+    RAISE EXCEPTION 'Valores dos itens inválidos.';
   END IF;
   IF v_total < 0 OR v_down < 0 OR v_remaining < 0 OR v_fee < 0 THEN RAISE EXCEPTION 'Valores da venda inválidos.'; END IF;
   IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_items) e WHERE COALESCE((e->>'quantity')::int, 0) <= 0) THEN

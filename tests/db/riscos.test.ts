@@ -1,4 +1,4 @@
-// Riscos de docs/riscos-seguranca.md cobertos no PGlite (migrações 001–060): A5, A10/A13 e impersonação × loja ativa.
+// Riscos de docs/riscos-seguranca.md cobertos no PGlite (migrações 001–061): A5, A10/A13 e impersonação × loja ativa.
 // A3 (bucket products), A9 (exclusão e configuração por papel) e A11 (producao-anexos) estão em rls.test.ts.
 // Papéis: dono, gerente e vendedor da loja A; dono da loja B; admin da plataforma.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -140,6 +140,30 @@ describe('A13 residual: create_sale recalcula valores no servidor (060)', () => 
     expect(await csFails(sellerA, { total: 100, payment_type: 'FULL', payment_method: 'Cartão Crédito', card_installments: 1, card_fee_amount: 50 }, [item(100)])).toMatch(/não confere com a taxa da loja \(esperado: 3/);
     // Dividido: no máximo a parte em cartão × maior % (3%): entrada PIX 40, restante cartão 60 → até 1,80.
     expect(await csFails(sellerA, { total: 100, payment_type: 'PARTIAL', down_payment: 40, remaining_amount: 60, down_payment_method: 'PIX', remaining_payment_method: 'CREDIT_CARD', card_fee_amount: 5 }, [item(100)])).toMatch(/passa da taxa configurada/);
+  });
+
+  it('NaN e Infinity recusados no preço (sem total), desconto, taxa, entrada e restante', async () => {
+    const before = (await t.sql(`SELECT count(*)::int n FROM transactions`))[0].n;
+    for (const bad of ['NaN', 'Infinity', '-Infinity']) {
+      expect(await csFails(sellerA, { payment_type: 'FULL', payment_method: 'PIX' }, [{ product_name: 'X', quantity: 1, unit_price: bad }]), `preço ${bad}`).toMatch(/Valores dos itens inválidos/);
+      for (const f of ['discount', 'card_fee_amount', 'down_payment', 'remaining_amount', 'total']) {
+        expect(await csFails(sellerA, { total: 100, payment_type: 'PARTIAL', payment_method: 'Cartão Crédito', [f]: bad }, [item(100)]), `${f} ${bad}`).toMatch(/Valores da venda inválidos/);
+      }
+    }
+    expect((await t.sql(`SELECT count(*)::int n FROM transactions`))[0].n).toBe(before);
+  });
+
+  it('CHECK de finitude (061) recusa NaN e Infinity gravados direto, até pelo servidor', async () => {
+    const [{ id }] = await t.sql(`INSERT INTO sales (total, store_id) VALUES (1, $1) RETURNING id`, [storeA]);
+    for (const q of [
+      `UPDATE sales SET total = 'NaN' WHERE id = $1`,
+      `UPDATE sales SET card_fee_amount = 'Infinity' WHERE id = $1`,
+      `UPDATE sales SET discount = '-Infinity' WHERE id = $1`,
+      `INSERT INTO sale_items (sale_id, store_id, product_name, quantity, unit_price) VALUES ($1, '${storeA}', 'X', 1, 'NaN')`,
+      `INSERT INTO transactions (description, amount, type, category, sale_id, store_id) VALUES ('X', 'Infinity', 'INCOME', 'Vendas', $1, '${storeA}')`,
+    ]) {
+      await expect(t.sql(q, [id]), q).rejects.toThrow(/_finito/);
+    }
   });
 
   it('venda normal do vendedor: à vista no cartão, débito, dividida e com desconto', async () => {
