@@ -10,6 +10,8 @@ Estado: **pronto** · **a fazer** · **bloqueado pelo dono** (sem resposta; não
 Migração em produção, deploy em produção, publicar Termos, cobrança real no Asaas, alterar dados das lojas reais (`com-stillo-moveis`, `royal-home`), criar repositório novo, apagar dados, push no GitHub.
 Migrações são escritas e testadas só em banco de teste/local.
 
+Autorização do dono (27/11, via Tonny Stark): avançar sem pedir permissão a cada etapa. Liberdade para aplicar migrações, push, merge, deploy e para atacar os riscos do relatório na ordem de prioridade. Manter relatório de evidências por etapa (snapshot antes, testes, verificação); reportar falhas/bloqueios imediatamente; não inventar dados para pendências não respondidas (e-mail de colegas, dados de demonstração, imagens públicas vs link, CMV, domínio, razão social, CNPJ, WhatsApp, cobrança): deixá-las de fora ou perguntar ao dono quando necessário. Aprovação explícita não é mais necessária para etapas técnicas reversíveis; para ações irreversíveis (excluir dados de produção, enviar mensagem a pessoas, pagamento) confirmar antes.
+
 ## Tabela por pergunta
 
 | Nº | Decisão do dono | Ação | Resp. | Estado |
