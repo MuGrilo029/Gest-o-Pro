@@ -281,6 +281,16 @@ export const dependentsOf = (key: ModuleKey): ModuleKey[] => {
 };
 
 /**
+ * Impersonação (decisões 33 e 36): só o dono do SaaS (is_platform_admin).
+ * Barreira da interface; o servidor também recusa (set_active_store → is_store_member).
+ */
+export const assertCanImpersonate = (isPlatformAdmin: boolean): void => {
+  if (isPlatformAdmin !== true) {
+    throw new Error('Apenas o administrador da plataforma pode acessar outra loja.');
+  }
+};
+
+/**
  * Regra de acesso a uma tela (pura, usada pelo StoreContext e pelos testes).
  * - Telas de administração da plataforma: só o administrador.
  * - Módulo desligado bloqueia suas telas para todos.

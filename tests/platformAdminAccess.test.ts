@@ -1,5 +1,7 @@
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import { describe, expect, it } from 'vitest';
-import { MODULES, ModuleKey, PLATFORM_ADMIN_VIEWS, canAccessViewFor } from '../lib/modules';
+import { MODULES, ModuleKey, PLATFORM_ADMIN_VIEWS, assertCanImpersonate, canAccessViewFor } from '../lib/modules';
 
 // Decisão 33/36: só o dono do SaaS (is_platform_admin) entra no painel admin.
 // Nenhum papel de loja, permissão extra ou módulo ligado abre essas telas.
@@ -28,4 +30,28 @@ describe('painel admin só para is_platform_admin', () => {
       expect(canAccessViewFor(view, { role: null, isPlatformAdmin: true, moduleStates: {} })).toBe(true);
     });
   }
+});
+
+describe('impersonação só para is_platform_admin (startImpersonation)', () => {
+  it('recusa quem não é is_platform_admin', () => {
+    expect(() => assertCanImpersonate(false)).toThrow(/administrador da plataforma/);
+  });
+
+  it('recusa valores não booleanos (ex.: flag ausente no perfil)', () => {
+    expect(() => assertCanImpersonate(undefined as unknown as boolean)).toThrow();
+    expect(() => assertCanImpersonate('true' as unknown as boolean)).toThrow();
+  });
+
+  it('libera is_platform_admin', () => {
+    expect(() => assertCanImpersonate(true)).not.toThrow();
+  });
+
+  it('startImpersonation checa o admin antes de trocar de loja', () => {
+    const src = readFileSync(resolve(__dirname, '../contexts/StoreContext.tsx'), 'utf8');
+    const body = src.slice(src.indexOf('const startImpersonation'), src.indexOf('const stopImpersonation'));
+    const guard = body.indexOf('assertCanImpersonate(isPlatformAdmin)');
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(body.indexOf('switchStore(storeId)'));
+    expect(guard).toBeLessThan(body.indexOf('sessionStorage.setItem'));
+  });
 });

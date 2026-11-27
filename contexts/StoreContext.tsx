@@ -10,6 +10,7 @@ import {
   ModuleKey,
   SELLER_DEFAULT_VIEWS,
   StoreRole,
+  assertCanImpersonate,
   canAccessViewFor,
   dependentsOf,
   getModule,
@@ -483,13 +484,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   const startImpersonation = useCallback(async (storeId: string) => {
+    assertCanImpersonate(isPlatformAdmin);
     await switchStore(storeId);
     const target = stores.find(s => s.id === storeId) || { id: storeId, name: 'Loja', role: 'OWNER', permissions: [] as AppView[] };
     setImpersonatedStore(target);
     if (typeof window !== 'undefined') {
       sessionStorage.setItem('GESTAO_PRO_IMPERSONATED_STORE', JSON.stringify(target));
     }
-  }, [stores, switchStore]);
+  }, [stores, switchStore, isPlatformAdmin]);
 
   const stopImpersonation = useCallback(async () => {
     setImpersonatedStore(null);

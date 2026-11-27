@@ -51,3 +51,9 @@ Conferência em produção feita só por leitura em 27/11/2026 (projeto `yfyckre
 6. **Realtime → Settings**: canais privados/autorização (sem tabelas de negócio publicadas hoje).
 7. **Vercel**: variáveis de produção só com `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_VAPID_PUBLIC_KEY`; conferir a CSP no console do preview; trocar o domínio na CSP/`ALLOWED_ORIGINS` quando o domínio definitivo existir.
 8. **GitHub**: Actions ligado e branch protection exigindo o job `CI` (após o push aprovado).
+
+## Pendências desta entrega (27/11/2026)
+- **Estagiario1:** revisou `45045f5`; ajustes aplicados em `d2cdde3` (CSP, checksum do gitleaks, R3, A12, pen-test 4.2) e o teste de impersonação no commit seguinte. Falta a revisão desses dois commits.
+- **Harness de RLS no PGlite (Backend):** ainda não entregue; pedido com os casos exigidos (isolamento A×B, DELETE do vendedor nas 9 tabelas e em `producao-anexos`, `admin_*` e `set_active_store` para não-admin, Storage `products` por pasta).
+- **Migrações 048+ (Backend):** ainda não existem na branch do Backend; revisão de isolamento, papéis, Storage `products` e sessões pendente. Nenhuma migração aplicada.
+- **Baixo (anotado):** a interface restaura `impersonatedStore` do `sessionStorage` sem checar o admin; só muda o aviso na tela, pois os dados passam pelo RLS (pen-test 2.7).
