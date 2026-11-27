@@ -1,0 +1,30 @@
+# Gitleaks — Gestão Pro. Usa as regras padrão e acrescenta as chaves do Supabase.
+title = "gestao-pro"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "supabase-secret-key"
+description = "Chave secreta do Supabase (sb_secret_)"
+regex = '''sb_secret_[A-Za-z0-9_-]{20,}'''
+keywords = ["sb_secret_"]
+
+[[rules]]
+id = "supabase-publishable-key"
+description = "Chave publicável do Supabase versionada (deve vir do ambiente)"
+regex = '''sb_publishable_[A-Za-z0-9_-]{20,}'''
+keywords = ["sb_publishable_"]
+
+[[rules]]
+id = "vapid-private-key"
+description = "Chave privada VAPID atribuída no código"
+regex = '''(?i)vapid_private_key\s*[:=]\s*['"]?[A-Za-z0-9_-]{40,}'''
+keywords = ["vapid_private_key"]
+
+[allowlist]
+description = "Modelos e documentação sem valores reais"
+paths = [
+  '''\.env\.example$''',
+  '''package-lock\.json$''',
+]
