@@ -3,7 +3,7 @@
 --   1) admin_delete_store: UMA transação apaga os dados, marca a loja como excluída e grava o que falta
 --      (store_deletions). Se falhar, nada muda e nenhum arquivo é tocado;
 --   2) a Edge Function manage-users apaga os arquivos do Storage (products e producao-anexos, pasta {store_id}/)
---      pela Storage API; a lista vem de admin_store_deletion_files, relida até zerar;
+--      pela Storage API (e os de boletos, 068); a lista vem de admin_store_deletion_files, relida até zerar;
 --   3) a função apaga os logins elegíveis (admin_deletion_pending_logins, reavaliados na hora);
 --   4) admin_delete_store_status confere no banco o que sobrou. Repetir a mesma chamada continua de onde parou.
 --
@@ -113,7 +113,7 @@ BEGIN
   END IF;
   RETURN QUERY
     SELECT o.bucket_id, o.name FROM storage.objects o
-     WHERE o.bucket_id IN ('products', 'producao-anexos') AND (storage.foldername(o.name))[1] = p_store::text
+     WHERE o.bucket_id IN ('products', 'producao-anexos', 'boletos') AND (storage.foldername(o.name))[1] = p_store::text
      ORDER BY o.bucket_id, o.name
      LIMIT LEAST(GREATEST(COALESCE(p_limit, 100), 1), 1000);
 END $$;
@@ -145,7 +145,7 @@ BEGIN
   SELECT * INTO d FROM public.store_deletions WHERE store_id = p_store FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Esta loja não está em exclusão.'; END IF;
   SELECT count(*)::integer INTO v_files FROM storage.objects o
-   WHERE o.bucket_id IN ('products', 'producao-anexos') AND (storage.foldername(o.name))[1] = p_store::text;
+   WHERE o.bucket_id IN ('products', 'producao-anexos', 'boletos') AND (storage.foldername(o.name))[1] = p_store::text;
   SELECT count(*)::integer INTO v_logins FROM public.admin_deletion_pending_logins(p_store);
   SELECT COALESCE(jsonb_agg(jsonb_build_object('user_id', c.uid, 'reason', public._store_login_keep_reason(c.uid, p_store))), '[]'::jsonb)
     INTO v_kept FROM unnest(d.candidate_logins) AS c(uid)
@@ -184,9 +184,10 @@ BEGIN
   END LOOP;
   SELECT jsonb_build_object(
            'products', count(*) FILTER (WHERE o.bucket_id = 'products'),
-           'producao-anexos', count(*) FILTER (WHERE o.bucket_id = 'producao-anexos'))
+           'producao-anexos', count(*) FILTER (WHERE o.bucket_id = 'producao-anexos'),
+           'boletos', count(*) FILTER (WHERE o.bucket_id = 'boletos'))
     INTO v_storage FROM storage.objects o
-   WHERE o.bucket_id IN ('products', 'producao-anexos') AND (storage.foldername(o.name))[1] = p_store::text;
+   WHERE o.bucket_id IN ('products', 'producao-anexos', 'boletos') AND (storage.foldername(o.name))[1] = p_store::text;
   SELECT COALESCE(jsonb_agg(jsonb_build_object('user_id', m.user_id, 'email', u.email, 'role', m.role,
            'action', CASE WHEN public._store_login_keep_reason(m.user_id, p_store) IS NULL THEN 'apagar' ELSE 'manter' END,
            'reason', public._store_login_keep_reason(m.user_id, p_store))

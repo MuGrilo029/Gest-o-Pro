@@ -13,7 +13,7 @@ export interface Faults {
   storageNoop?: boolean;
 }
 
-export async function loadManageUsers(t: TestDb) {
+export async function loadManageUsers(t: TestDb, fnName: 'manage-users' | 'send-push-notification' = 'manage-users') {
   const faults: Faults = {};
   const calls = { createUser: 0, deleteUser: 0, updateUser: 0, removed: [] as string[] };
 
@@ -29,9 +29,55 @@ export async function loadManageUsers(t: TestDb) {
     }
   };
 
+  /** Consulta mínima no formato do supabase-js, executada como `who` (null = service_role, sem RLS). */
+  const from = (who: string | null) => (table: string) => {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    let cols = '*';
+    let write: ((cond: string) => string) | null = null;
+    const bind = (v: unknown) => { params.push(v); return `$${params.length}`; };
+    const run = async () => {
+      try {
+        const cond = where.length ? ` WHERE ${where.join(' AND ')}` : '';
+        const q = write ? write(cond) : `SELECT ${cols} FROM public.${table}${cond}`;
+        const rows = who ? await t.as<any>(who, q, params) : await t.sql<any>(q, params);
+        return { data: rows, error: null };
+      } catch (e: any) {
+        return { data: null, error: { message: String(e.message), code: e.code } };
+      }
+    };
+    const q: any = {
+      select: (c: string) => { cols = c; return q; },
+      eq: (c: string, v: unknown) => { where.push(`${c} = ${bind(v)}`); return q; },
+      is: (c: string) => { where.push(`${c} IS NULL`); return q; },
+      in: (c: string, v: unknown[]) => { where.push(`${c}::text = ANY(${bind(v)}::text[])`); return q; },
+      update: (obj: Record<string, unknown>) => {
+        const sets = Object.entries(obj).map(([k, v]) => `${k} = ${bind(v)}`);
+        write = cond => `UPDATE public.${table} SET ${sets.join(', ')}${cond}`;
+        return q;
+      },
+      delete: () => { write = cond => `DELETE FROM public.${table}${cond}`; return q; },
+      upsert: (obj: Record<string, unknown>, o: { onConflict: string }) => {
+        const keys = Object.keys(obj);
+        const marks = keys.map(k => bind(obj[k]));
+        const sets = keys.filter(k => !o.onConflict.split(',').includes(k)).map(k => `${k} = excluded.${k}`);
+        write = () => `INSERT INTO public.${table} (${keys.join(', ')}) VALUES (${marks.join(', ')}) ON CONFLICT (${o.onConflict}) DO UPDATE SET ${sets.join(', ')}`;
+        return q;
+      },
+      maybeSingle: async () => { const r = await run(); return { data: r.data?.[0] ?? null, error: r.error }; },
+      then: (ok: any, ko: any) => run().then(ok, ko),
+    };
+    return q;
+  };
+
   const adminClient = {
+    from: from(null),
     auth: {
       admin: {
+        getUserById: async (id: string) => {
+          const [u] = await t.sql<any>('SELECT id, email, email_confirmed_at FROM auth.users WHERE id = $1', [id]);
+          return u ? { data: { user: u }, error: null } : { data: { user: null }, error: { message: 'not found' } };
+        },
         createUser: async (u: any) => {
           calls.createUser++;
           if (faults.createUser) return { data: { user: null }, error: { message: 'auth indisponível' } };
@@ -73,7 +119,7 @@ export async function loadManageUsers(t: TestDb) {
   };
 
   const g = globalThis as any;
-  const env: Record<string, string> = { SUPABASE_URL: 'http://local', SUPABASE_ANON_KEY: 'anon', SUPABASE_SERVICE_ROLE_KEY: 'service' };
+  const env: Record<string, string> = { SUPABASE_URL: 'http://local', SUPABASE_ANON_KEY: 'anon', SUPABASE_SERVICE_ROLE_KEY: 'service', PUSH_WEBHOOK_SECRET: 'segredo-de-teste' };
   let handler!: (req: Request) => Promise<Response>;
   g.Deno = { env: { get: (k: string) => env[k] }, serve: (h: typeof handler) => { handler = h; } };
   g.__edgeCreateClient = (_url: string, key: string, opts: any) => {
@@ -83,11 +129,12 @@ export async function loadManageUsers(t: TestDb) {
     return {
       auth: { getUser: async () => (token ? { data: { user: { id: token } }, error: null } : { data: { user: null }, error: {} }) },
       rpc: rpcAs(token),
+      from: from(token),
     };
   };
   // import.meta.glob: o Vite carrega o index.ts (com o alias do esm.sh) e o tsc não segue para o código Deno.
-  const entry = Object.values(import.meta.glob('../../supabase/functions/manage-users/index.ts'));
-  await entry[0]();
+  const entries = import.meta.glob(['../../supabase/functions/manage-users/index.ts', '../../supabase/functions/send-push-notification/index.ts']);
+  await entries[`../../supabase/functions/${fnName}/index.ts`]();
 
   let ip = 0;
   /** Chama a função como o usuário `who` (cada chamada com um IP novo, para o limite de taxa não interferir). */
@@ -98,5 +145,11 @@ export async function loadManageUsers(t: TestDb) {
     return { status: res.status, body: await res.json() as any };
   };
 
-  return { call, faults, calls };
+  /** Requisição com cabeçalhos livres (para o limite de taxa e o segredo do webhook). */
+  const request = async (headers: Record<string, string>, body: Record<string, unknown>) => {
+    const res = await handler(new Request(`http://local/${fnName}`, { method: 'POST', headers, body: JSON.stringify(body) }));
+    return { status: res.status, body: await res.json() as any };
+  };
+
+  return { call, request, faults, calls };
 }

@@ -15,13 +15,16 @@ const ok = (body: Record<string, unknown>): Reply => ({ status: 200, body: { ok:
 const fail = (error: string, status = 400): Reply => ({ status, body: { error } });
 
 /** Mensagens de regra do banco vão para a tela; erro inesperado vira frase genérica. */
-const BUSINESS_RE = /^(UMA_LOJA_POR_DONO|REQUISICAO_REUTILIZADA|CONTA_INEXISTENTE|NOME_NAO_CONFERE|ASSINATURA_NO_GATEWAY|TABELA_SEM_TRATAMENTO|REFERENCIA_ENTRE_LOJAS|LOJA_EXCLUIDA):|^(Loja não encontrada|Plano inválido|Prazo inválido|Informe |Apenas o administrador)/;
+const BUSINESS_RE = /^(CONTA_NAO_CONFIRMADA|UMA_LOJA_POR_DONO|REQUISICAO_REUTILIZADA|CONTA_INEXISTENTE|NOME_NAO_CONFERE|ASSINATURA_NO_GATEWAY|TABELA_SEM_TRATAMENTO|REFERENCIA_ENTRE_LOJAS|LOJA_EXCLUIDA):|^(Loja não encontrada|Plano inválido|Prazo inválido|Informe |Apenas o administrador)/;
 const dbFail = (error: any, fallback: string): Reply => {
   const message = String(error?.message || '');
   if (BUSINESS_RE.test(message)) return fail(message, message.startsWith('Loja não encontrada') ? 404 : 409);
   console.error('storeAdmin: erro no banco', error?.code ?? '', message);
   return fail(fallback, 500);
 };
+
+/** Conta cadastrada por qualquer pessoa e ainda não confirmada nunca é ligada a uma loja. */
+export const UNCONFIRMED = 'CONTA_NAO_CONFIRMADA: este e-mail tem um cadastro ainda não confirmado. Peça para a pessoa confirmar o e-mail, ou remova o cadastro pendente, e tente de novo.';
 
 export async function createStore(caller: any, admin: any, body: any, tempPassword: string): Promise<Reply> {
   const requestId = typeof body?.request_id === 'string' ? body.request_id : '';
@@ -46,6 +49,7 @@ export async function createStore(caller: any, admin: any, body: any, tempPasswo
   let info = first.data;
   // Conta que já é dona de outra loja: recusa antes de criar qualquer coisa.
   if (info.owns_other_store) return fail('UMA_LOJA_POR_DONO: esta conta já é dona de outra loja.', 409);
+  if (info.user_id && info.confirmed !== true) return fail(UNCONFIRMED, 409);
 
   let userId: string | null = info.user_id;
   let createdNow = false;
@@ -66,6 +70,7 @@ export async function createStore(caller: any, admin: any, body: any, tempPasswo
       }
       info = again.data;
       userId = info.user_id;
+      if (info.confirmed !== true) return fail(UNCONFIRMED, 409);
     } else {
       userId = data.user.id;
       createdNow = true;

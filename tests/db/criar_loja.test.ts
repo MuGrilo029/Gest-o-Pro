@@ -100,6 +100,46 @@ describe('create_store', () => {
     await expectOwnerCanEnter(id, res.body.store_id, 'inicio');
   });
 
+  it('conta com e-mail não confirmado: recusada na função e no banco; nada é criado, ligado ou apagado', async () => {
+    const id = await t.createUser('vitima@teste.local');
+    await t.sql(`UPDATE auth.users SET email_confirmed_at = NULL, encrypted_password = 'do-atacante' WHERE id = $1`, [id]);
+    const before = { users: fn.calls.createUser, deleted: fn.calls.deleteUser, stores: (await t.sql('SELECT id FROM stores')).length };
+    const res = await fn.call(admin, input('vitima@teste.local'));
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/^CONTA_NAO_CONFIRMADA:/);
+    for (const q of [`SELECT * FROM admin_create_client('vitima@teste.local', 'X')`,
+      `SELECT admin_create_store_with_owner(gen_random_uuid(), '${id}', 'X', 'inicio')`]) {
+      expect(await t.fails(admin, q), q).toMatch(/CONTA_NAO_CONFIRMADA/);
+    }
+    expect([fn.calls.createUser, fn.calls.deleteUser]).toEqual([before.users, before.deleted]);
+    expect(await t.sql('SELECT id FROM stores')).toHaveLength(before.stores);
+    expect(await t.sql('SELECT 1 FROM store_members WHERE user_id = $1', [id])).toHaveLength(0);
+    expect((await userByEmail('vitima@teste.local')).encrypted_password).toBe('do-atacante');
+  });
+
+  it('equipe (create_member): conta não confirmada não ganha vínculo, nem pelo admin nem pelo dono', async () => {
+    const boss = await t.createUser('chefe.equipe@teste.local');
+    const store = await t.createStore('Equipe', boss, { plan: 'avancado' });
+    const id = await t.createUser('pendente@teste.local');
+    await t.sql('UPDATE auth.users SET email_confirmed_at = NULL WHERE id = $1', [id]);
+    const body = { action: 'create_member', store_id: store, email: 'pendente@teste.local', name: 'P' };
+    for (const role of ['OWNER', 'MANAGER', 'SELLER']) {
+      const res = await fn.call(admin, { ...body, role });
+      expect(res.status, role).toBe(409);
+      expect(res.body.error, role).toMatch(/^CONTA_NAO_CONFIRMADA:/);
+    }
+    const byOwner = await fn.call(boss, { ...body, role: 'SELLER' });
+    expect(byOwner.body.error).toBe('Não foi possível adicionar este e-mail. Solicite ao administrador da plataforma.');
+    expect(await t.sql('SELECT 1 FROM store_members WHERE user_id = $1', [id])).toHaveLength(0);
+    // Confirmado, o admin liga normalmente; o dono atualiza o vendedor e cria e-mail novo como antes.
+    await t.sql('UPDATE auth.users SET email_confirmed_at = now() WHERE id = $1', [id]);
+    expect((await fn.call(admin, { ...body, role: 'SELLER' })).body).toMatchObject({ ok: true, existing_account: true });
+    expect((await fn.call(boss, { ...body, role: 'SELLER' })).body).toMatchObject({ ok: true });
+    const fresh = await fn.call(boss, { ...body, email: 'novo.vendedor@teste.local', role: 'SELLER' });
+    expect(fresh.body.ok).toBe(true);
+    expect(fresh.body.temporary_password).toHaveLength(16);
+  });
+
   it('e-mail já dono de loja: recusado, nada criado', async () => {
     await fn.call(admin, input('dono.unico@teste.local'));
     const before = { users: fn.calls.createUser, stores: (await t.sql('SELECT id FROM stores')).length };
