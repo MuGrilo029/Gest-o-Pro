@@ -70,6 +70,16 @@ Método: o banco local (PGlite) foi montado com `MASTER_SCHEMA.sql.example` + as
 
 - **064** (limite de desconto do vendedor, D4): escrita e testada só no PGlite, não aplicada. Altera `stores` (coluna `seller_max_discount_percent` com padrão 10, CHECK e gatilho), cria `set_seller_discount_limit` e redefine `create_sale`. Venda de vendedor com desconto acima de 10% passa a ser recusada assim que for aplicada.
 
+### Pendente de aprovação (065–069), nesta ordem
+
+- **065** (Financeiro no Início): altera `plan_modules` e recalcula `store_modules` das lojas do Início. Sem lançamento retroativo.
+- **066** (excluir loja): coluna `stores.deleted_at`, tabela `store_deletions`, gatilhos de loja excluída, RPCs `admin_delete_store*`, tira a FK `terms_acceptances_user_id_fkey` e redefine `admin_list_stores`. Não apaga nada ao aplicar.
+- **067** (criar loja sem sobra): coluna `stores.creation_request_id`, RPCs `admin_lookup_login` e `admin_create_store_with_owner`; `admin_create_client` passa a recusar e-mail sem login.
+- **068** (bucket privado `boletos`): cria o bucket (10 MB, PDF e imagem), `can_access_boletos` e as políticas de Storage. Não altera dados.
+- **069**: tira o EXECUTE de `add_store_member` (sem uso no app). Não altera dados.
+- Depois das migrações: publicar `manage-users` (verify_jwt ligado) e só então o front que usa `create_store`, `delete_store` e os caminhos `{store_id}/` nos uploads.
+- `send-push-notification`: publicar com verify_jwt desligado (o gatilho do banco chama sem JWT).
+
 ## Aplicação de 27/11/2026 (SeniorDev, com aprovação do dono via Tonny Stark)
 
 - **Snapshot antes:** schema `snapshot_20261127` no próprio banco (36 tabelas de `public` copiadas, mais `_policies` 57, `_functions` 68, `_grants`, `_triggers` e `_storage_objects_meta`), sem acesso para anon e authenticated. Cópia local em JSON fora do repositório.

@@ -4,11 +4,15 @@ import { Product, Customer, Quote, QuoteItem, FurnitureSpecs, Sale, QuoteStatus,
 import { formatBrazilDateTime, formatCurrency, formatDisplayDate, getUUID } from '../lib/utils';
 import { docProblem, findDocOwner } from '../lib/documents';
 import { Card, Button, Input, Select, Badge, formatCpfCnpj, formatPhone, Modal, confirmDialog, alertDialog } from '../components/UI';
+import { useHideBoleto } from '../hooks/useHideBoleto';
+import { withoutBoleto } from '../lib/boletos';
 import { Search, ShoppingCart, Trash, Plus, Minus, ArrowRight, ArrowLeft, Printer, FileText, Check, DollarSign, UserCheck, Calendar, Clock, History, Edit, CheckCircle, Trash2, Info, Upload, Image as ImageIcon, Loader2, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 import { ServiceConfigForm } from '../components/ServiceConfigForm';
 import { ManagerOnly } from '../components/ManagerOnly';
+import { storeFilePath } from '../lib/storagePath';
+import { useStore } from '../contexts/StoreContext';
 
 interface CartItem extends Product {
     quantity: number;
@@ -84,6 +88,8 @@ export const Quotes: React.FC = () => {
     // Payment Data (Replicated from Sales logic)
     const [discount, setDiscount] = useState<number>(0);
     const [paymentMethod, setPaymentMethod] = useState('Dinheiro');
+    const hideBoleto = useHideBoleto();
+    const activeStoreId = useStore().activeStore?.id;
     const [paymentType, setPaymentType] = useState<'FULL' | 'PARTIAL'>('FULL');
     const [downPayment, setDownPayment] = useState(0);
     const [isRemainingPaidNow, setIsRemainingPaidNow] = useState(true); // For Partial (Split vs Future)
@@ -105,13 +111,11 @@ export const Quotes: React.FC = () => {
         if (!e.target.files || e.target.files.length === 0) return;
 
         const file = e.target.files[0];
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${Math.random().toString(36).substring(2)}.${fileExt} `;
-        const filePath = `${fileName} `;
 
         setIsUploading(true);
 
         try {
+            const filePath = storeFilePath(activeStoreId, file.name);
             const { error: uploadError } = await supabase.storage
                 .from('products')
                 .upload(filePath, file);
@@ -832,7 +836,7 @@ export const Quotes: React.FC = () => {
                                             value={paymentMethod}
                                             onChange={e => setPaymentMethod(e.target.value)}
                                         >
-                                            {['Dinheiro', 'PIX', 'Cartão Crédito', 'Cartão Débito', 'Boleto'].map(m => <option key={m} value={m}>{m}</option>)}
+                                            {withoutBoleto(['Dinheiro', 'PIX', 'Cartão Crédito', 'Cartão Débito', 'Boleto'], hideBoleto, paymentMethod).map(m => <option key={m} value={m}>{m}</option>)}
                                         </Select>
                                     </div>
                                     <div className="col-span-2 p-3 bg-white dark:bg-slate-800 rounded border border-gray-200 dark:border-slate-600">
@@ -858,7 +862,7 @@ export const Quotes: React.FC = () => {
                                     value={paymentMethod}
                                     onChange={e => setPaymentMethod(e.target.value)}
                                 >
-                                    {['Dinheiro', 'PIX', 'Cartão Crédito', 'Cartão Débito', 'Boleto'].map(m => <option key={m} value={m}>{m}</option>)}
+                                    {withoutBoleto(['Dinheiro', 'PIX', 'Cartão Crédito', 'Cartão Débito', 'Boleto'], hideBoleto, paymentMethod).map(m => <option key={m} value={m}>{m}</option>)}
                                 </Select>
                             )}
 

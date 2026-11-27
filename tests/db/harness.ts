@@ -31,9 +31,9 @@ async function runAs<T>(tx: Transaction, who: Who, q: string, params?: unknown[]
   return (await tx.query<T>(q, params as any[])).rows;
 }
 
-export async function createTestDb(opts: { extra?: string[] } = {}): Promise<TestDb> {
+export async function createTestDb(opts: { extra?: string[]; upTo?: string } = {}): Promise<TestDb> {
   const db = await PGlite.create();
-  await loadSchema(db, { extra: opts.extra });
+  await loadSchema(db, { extra: opts.extra, upTo: opts.upTo });
 
   const sql = async <T>(q: string, params?: unknown[]) => (await db.query<T>(q, params as any[])).rows;
   const as = <T>(who: Who, q: string, params?: unknown[]) => db.transaction(tx => runAs<T>(tx, who, q, params));

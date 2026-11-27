@@ -10,6 +10,8 @@ Estado: **pronto** · **a fazer** · **bloqueado pelo dono** (sem resposta; não
 Migração em produção, deploy em produção, publicar Termos, cobrança real no Asaas, alterar dados das lojas reais (`com-stillo-moveis`, `royal-home`), criar repositório novo, apagar dados, push no GitHub.
 Migrações são escritas e testadas só em banco de teste/local.
 
+Autorização do dono (27/11, via Tonny Stark): avançar sem pedir permissão a cada etapa. Liberdade para aplicar migrações, push, merge, deploy e para atacar os riscos do relatório na ordem de prioridade. Manter relatório de evidências por etapa (snapshot antes, testes, verificação); reportar falhas/bloqueios imediatamente; não inventar dados para pendências não respondidas (e-mail de colegas, dados de demonstração, imagens públicas vs link, CMV, domínio, razão social, CNPJ, WhatsApp, cobrança): deixá-las de fora ou perguntar ao dono quando necessário. Aprovação explícita não é mais necessária para etapas técnicas reversíveis; para ações irreversíveis (excluir dados de produção, enviar mensagem a pessoas, pagamento) confirmar antes.
+
 ## Tabela por pergunta
 
 | Nº | Decisão do dono | Ação | Resp. | Estado |
@@ -107,8 +109,43 @@ Seguem pendentes: duração do trial, MFA, SSO e +tag, e-mail de colegas, dados 
 - **Limite de desconto publicado (27/11):** aprovado pelo dono; migração 064 aplicada no `supabase-dev` (ver `APLICADAS.md`) e front publicado pela `main`. Backend f2b09ea (aprovado por S), front até c5603c3 (53b69f2 aprovado por E1; c5603c3 revisado por SD). Testes: tsc, build, Vitest 195/195, replay duplo, Playwright mock 30/30. Para depois: admin impersonando não vê o campo do limite (grava só pelo servidor).
 - **Bloqueado pelo dono:** e-mail completo dos colegas na equipe (decisão 32), `TERMS_URL` e número do WhatsApp, além das perguntas pendentes acima.
 
+## Decisões de 27/11 (via Produto), em implementação
+1. **Financeiro em todos os planos**, inclusive Início. Boletos continua fora do Início; Relatórios não muda. Sem lançamento retroativo (não pedido). Substitui, só para o Financeiro, a distribuição anterior de módulos.
+2. **Criação de loja pelo painel** deve funcionar sem deixar loja órfã nem duplicada.
+3. **Excluir loja** no painel, só admin da plataforma, apagando dados e arquivos, com confirmação forte. O dono exclui pelo botão; o time não exclui lojas existentes.
+
+**Ajustes decididos pelo dono (27/11, via Produto 2ad77cd0):**
+- Boletos nos planos 2 (Crescimento) e 3 (Avançado) — não só no 2.
+- Excluir loja apaga todos os logins da loja, inclusive quem também é dono de outra loja (ciente de que a outra loja fica sem dono).
+- Excluir loja apaga o aceite dos Termos junto com a loja (sem retenção).
+- Publicação aprovada após testes e revisão.
+
+**Aguardando o dono:** se pode publicar sem nova pergunta (respondido: sim, após testes/revisão). Outras perguntas pendentes continuam: duração do trial, MFA, SSO e +tag, e-mail de colegas, dados de demonstração, imagens (público ou link), CMV, domínio, razão social, CNPJ, número do WhatsApp. Publicação de função, migração e deploy **não aprovados** até a revisão da Segurança fechar a 066."
+
+## Decisões do dono (27/11, via Tonny Stark) — riscos do relatório de planos/módulos
+Não executar ainda: cada etapa pede aprovação do dono antes de aplicar. Incorporar ao plano.
+
+1. **Financeiro retroativo:** gerar lançamentos retroativos para vendas antigas feitas sem o módulo Financeiro (ex.: R$ 450 vendidos × R$ 0 lançados deve fechar).
+2. **Módulo desligado:** manter como está — só esconde a tela; a API continua gravando. Não bloquear no servidor.
+3. **Excluir venda:** cancelar com estorno, mantendo o histórico (não apagar de vez).
+4. **Venda sem saldo em loja sem Encomendas:** só avisar, não bloquear (saldo pode ficar negativo).
+5. **Boletos:** corrigir (a) tela, banco e painel divergem com override sem Financeiro; (b) bucket de anexos não existe; (c) página de vendas local desatualizada.
+6. **Prioridade:** atacar primeiro os riscos do relatório (sw.js, edição de venda, entregas, módulos), depois as pendências de lançamento.
+
 ## Riscos registrados por Segurança (sem mudar a decisão)
 - Senha de 8 caracteres sem números.
+- Senha provisória 12345678 — recomendação: troca obrigatória no primeiro acesso (não implementada sem confirmação).
+- Impersonação sem log e sem limite de tempo.
+- Exportação/anonimização LGPD fora do lançamento.
+- Chave publicável antiga do Supabase ficou no histórico do git (migração 001): recomenda-se rotacionar.
+
+## Decisões do dono (27/11, via Tonny Stark) — pendências de lançamento
+Incorporar como decisões; não executar até aprovação.
+
+1. **Pendências a fechar agora:** Trial, MFA e SSO. As demais (e-mail dos colegas, dados de demonstração, imagens públicas vs link, CMV, domínio, razão social, CNPJ, WhatsApp, cobrança) ficam para a próxima rodada.
+2. **Avançado = 6 vendedores** (confirma o que apareceu depois; "ilimitado" estava errado).
+3. **Trial = 7 dias com todos os módulos.** Trial não convertido guarda só o login do dono (052, já implementado).
+4. Prioridade continua: riscos do relatório (sw.js, edição de venda, entregas, módulos) primeiro; depois as pendências de lançamento (trial, MFA, SSO agora; o resto na próxima rodada).
 - Senha provisória 12345678 — recomendação: troca obrigatória no primeiro acesso (não implementada sem confirmação).
 - Impersonação sem log e sem limite de tempo.
 - Exportação/anonimização LGPD fora do lançamento.

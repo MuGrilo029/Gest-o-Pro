@@ -194,6 +194,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!platformAdmin) {
       setImpersonatedStore(null);
       if (typeof window !== 'undefined') sessionStorage.removeItem('GESTAO_PRO_IMPERSONATED_STORE');
+    } else {
+      // Loja aberta pelo admin que não existe mais (excluída em outra aba ou sessão): sai dela.
+      setImpersonatedStore(prev => {
+        if (!prev || list.some(s => s.id === prev.id)) return prev;
+        if (typeof window !== 'undefined') sessionStorage.removeItem('GESTAO_PRO_IMPERSONATED_STORE');
+        return null;
+      });
     }
 
     if (list.length === 0) {

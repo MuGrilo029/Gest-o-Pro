@@ -57,9 +57,11 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return respond({ error: 'Método não permitido.' }, 405);
 
-  if (!allow(clientKey(req, 'send-push'), 30, 60_000)) {
-    return respond({ error: 'Muitas requisições. Tente novamente em instantes.' }, 429);
-  }
+  // O segredo vem antes do limite: o gatilho do banco avisa todas as lojas pelo mesmo IP e não pode perder
+  // notificação. O limite vale só para quem não tem o segredo (por IP, que o cliente pode forjar, e por usuário).
+  const fromDb = safeEqual(req.headers.get('x-webhook-secret') || '', WEBHOOK_SECRET);
+  const tooMany = () => respond({ error: 'Muitas requisições. Tente novamente em instantes.' }, 429);
+  if (!fromDb && !allow(clientKey(req, 'send-push'), 30, 60_000)) return tooMany();
 
   const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
@@ -75,8 +77,6 @@ Deno.serve(async (req: Request) => {
     const rawId = body?.record?.id ?? body?.saleData?.saleId ?? body?.saleData?.id ?? body?.saleId;
     const recordId = typeof rawId === 'string' ? rawId : '';
     if (!UUID_RE.test(recordId)) return respond({ error: 'Registro não informado.' }, 400);
-
-    const fromDb = safeEqual(req.headers.get('x-webhook-secret') || '', WEBHOOK_SECRET);
 
     // --- 1. Autenticação do chamador e leitura do registro ------------------
     let content: PushContent | null = null;
@@ -95,6 +95,7 @@ Deno.serve(async (req: Request) => {
         });
         const { data: userData, error: userError } = await caller.auth.getUser();
         if (userError || !userData?.user) return respond({ error: 'Faça login novamente.' }, 401);
+        if (!allow(`send-push:user:${userData.user.id}`, 30, 60_000)) return tooMany();
         const { data } = await caller.from('sales').select('id, store_id, customer_name, total').eq('id', recordId).maybeSingle();
         sale = data;
       }

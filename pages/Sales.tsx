@@ -3,6 +3,8 @@ import { useAppStore } from '../store';
 import { useStore } from '../contexts/StoreContext';
 import { sellerDiscountProblem } from '../lib/discount';
 import { Card, Button, Input, Select, Badge, formatCpfCnpj, formatPhone, Modal, alertDialog } from '../components/UI';
+import { useHideBoleto } from '../hooks/useHideBoleto';
+import { withoutBoleto } from '../lib/boletos';
 import {
   ShoppingCart, Trash2, Plus, Minus, Check, Search, User, MapPin, Phone, FileText, Send,
   Building, Package, CreditCard, DollarSign, X, UserCheck, Truck, Store, Printer,
@@ -189,6 +191,7 @@ export const Sales: React.FC = () => {
   const [deliveryType, setDeliveryType] = useState<'PICKUP' | 'DELIVERY'>('PICKUP');
   // Sem o módulo de Entregas, a venda é sempre retirada na loja.
   const deliveriesEnabled = useStore().isModuleEnabled('deliveries');
+  const hideBoleto = useHideBoleto();
   const [deliveryDate, setDeliveryDate] = useState<string>('');
   const [discount, setDiscount] = useState<number>(0);
   const [paymentMethod, setPaymentMethod] = useState('Dinheiro');
@@ -372,7 +375,9 @@ export const Sales: React.FC = () => {
   };
 
   const categories = useMemo(() => ['Todos', ...Array.from(new Set(allCategories?.filter(c => c.type === 'PRODUCT').map(c => c.name) || []))], [allCategories]);
-  const paymentMethods = ['Dinheiro', 'Cartão Crédito', 'Cartão Débito', 'PIX', 'Boleto'];
+  // Início sem o módulo Boletos: sem a opção (a forma já gravada numa venda em edição continua visível).
+  const paymentOptions = (current: string) =>
+    withoutBoleto(['Dinheiro', 'Cartão Crédito', 'Cartão Débito', 'PIX', 'Boleto'], hideBoleto, editingSaleId ? current : null);
 
   const filteredProducts = useMemo(() => products.filter(p => (selectedCategory === 'Todos' || p.category === selectedCategory) && (p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.toLowerCase().includes(searchTerm.toLowerCase())) && (!onlyInStock || p.quantity > 0)), [products, selectedCategory, searchTerm, onlyInStock]);
   const filteredCustomers = useMemo(() => customerSearch ? (customers || []).filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase()) || c.cpfCnpj?.includes(customerSearch) || c.phone?.includes(customerSearch)).slice(0, 5) : [], [customers, customerSearch]);
@@ -707,7 +712,7 @@ export const Sales: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in p-4 bg-wine-50 dark:bg-slate-700/50 rounded-lg border border-wine-100 dark:border-slate-600">
                       <div className="space-y-4">
                         <Select label="Método da Entrada" value={downPaymentMethod} onChange={e => setDownPaymentMethod(e.target.value)}>
-                          {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                          {paymentOptions(downPaymentMethod).map(m => <option key={m} value={m}>{m}</option>)}
                         </Select>
                         {downPaymentMethod === 'Cartão Crédito' && (
                           <Select label="Parcelas (Entrada)" value={installmentsDown} onChange={e => setInstallmentsDown(Number(e.target.value))}>
@@ -725,7 +730,7 @@ export const Sales: React.FC = () => {
                       </div>
                       <div className="space-y-4">
                         <Select label="Método do Restante" value={remainingPaymentMethod} onChange={e => setRemainingPaymentMethod(e.target.value)}>
-                          {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                          {paymentOptions(remainingPaymentMethod).map(m => <option key={m} value={m}>{m}</option>)}
                         </Select>
                         {remainingPaymentMethod === 'Cartão Crédito' && (
                           <Select label="Parcelas (Restante)" value={installmentsRemaining} onChange={e => setInstallmentsRemaining(Number(e.target.value))}>
@@ -755,7 +760,7 @@ export const Sales: React.FC = () => {
                   ) : (
                     <div className="space-y-4">
                       <Select label="Método de Pagamento" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
-                        {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                        {paymentOptions(paymentMethod).map(m => <option key={m} value={m}>{m}</option>)}
                       </Select>
                       {paymentMethod === 'Cartão Crédito' && (
                         <Select label="Parcelas" value={installments} onChange={e => setInstallments(Number(e.target.value))}>
@@ -946,7 +951,7 @@ export const Sales: React.FC = () => {
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <Select label="Pagamento" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
-                      {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                      {paymentOptions(paymentMethod).map(m => <option key={m} value={m}>{m}</option>)}
                     </Select>
                     <Input label="Desconto (R$)" type="number" min={0} max={subtotal} value={discount} onChange={e => setDiscount(Math.min(Math.max(0, Number(e.target.value) || 0), subtotal))} />
                   </div>
