@@ -78,3 +78,9 @@ Método: o banco local (PGlite) foi montado com `MASTER_SCHEMA.sql.example` + as
 - **Lote 2** (só com o front novo): 059, 060, 061, 063 — sem erro, aplicadas logo antes da publicação.
 - **Verificação:** planos 1/3/6 e anual = 10×; `custom` inativo; core = dashboard, sales, customers, inventory, settings; `delete_sale` existe e `_seller_sale_tx_ok` não; `sales` sem policy nem GRANT de DELETE para authenticated; trigger `tg_sales_seller_guard`; CHECKs de finitude e de `card_fees`; anon sem EXECUTE em `create_sale` e `delete_sale`. Teste em transação desfeita, como vendedor real: INSERT direto em `sales` e em `transactions`, DELETE direto em `sales` e `delete_sale` foram recusados.
 - **Não aplicadas:** 023, 026, 027 e 029 (pendentes ou substituídas, ver acima). `purge_unconverted_trial` (052) existe, mas não está agendada nem foi executada.
+
+## Aplicação da 064 (27/11/2026, SeniorDev, com aprovação do dono via Tonny Stark)
+
+- **Snapshot antes:** schema `snapshot_20261127_064` (`stores`, `sales`, `_functions`, `_grants`, `_policies`), sem acesso para anon e authenticated; cópia local em JSON fora do repositório.
+- **064_limite_desconto_vendedor** aplicada sem erro, antes da publicação do front. Coluna `stores.seller_max_discount_percent` (NOT NULL, padrão 10; as 6 lojas ficaram com 10); anon sem EXECUTE em `create_sale` e `set_seller_discount_limit`.
+- **Teste em transação desfeita, como vendedor real** (com a loja ativa marcada só dentro da transação): desconto de 20 e de 10,02 sobre 100 recusado; 10 e 5 aceitos; mudar o limite por RPC recusado; UPDATE direto alterou 0 linhas. Nada gravado.
