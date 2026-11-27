@@ -43,6 +43,28 @@ test.describe('loja', () => {
     }
   });
 
+  test('excluir venda passa pela RPC delete_sale e devolve o estoque (063)', async ({ page, db }) => {
+    await goTo(page, 'Vendas / PDV');
+    await page.getByPlaceholder('Buscar produtos...').fill('Sofá E2E');
+    await page.getByRole('heading', { name: 'Sofá E2E 3 lugares' }).click();
+    await page.getByRole('button', { name: /finalizar venda/i }).click();
+    const confirm = page.getByRole('button', { name: /confirmar lançamento|confirmar venda|finalizar/i }).last();
+    if (await confirm.isVisible().catch(() => false)) await confirm.click();
+    await expect(page.getByText(/venda (realizada|registrada|finalizada|concluída)/i).first()).toBeVisible();
+    if (db) await expect.poll(() => Number(db.table('products').find(p => p.sku === 'E2E-SOF')!.quantity)).toBe(4);
+
+    await goTo(page, 'Histórico de Vendas');
+    await page.getByRole('button', { name: 'Excluir', exact: true }).first().click();
+    await page.getByRole('button', { name: /sim, excluir/i }).click();
+    await expect(page.getByText(/venda excluída/i).first()).toBeVisible();
+    if (db) {
+      expect(db.calls.some(c => c.name === 'delete_sale')).toBe(true);
+      expect(db.table('sales')).toHaveLength(0);
+      await expect.poll(() => Number(db.table('products').find(p => p.sku === 'E2E-SOF')!.quantity)).toBe(5);
+      expect(db.table('transactions').some(t => Number(t.amount) === 1500)).toBe(false);
+    }
+  });
+
   test('venda com desconto e cartão de crédito passa na conferência do servidor (060)', async ({ page, db }) => {
     await goTo(page, 'Vendas / PDV');
     await page.getByPlaceholder('Buscar produtos...').fill('Mesa E2E');

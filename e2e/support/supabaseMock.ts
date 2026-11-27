@@ -316,6 +316,33 @@ const RPC: Record<string, RpcHandler> = {
     }
     return { body: { sale_id: sale.id, itens: items.length, encomendas: 0, ordens_producao: 0, entregas: 0, lancamentos, movimentos_estoque: movimentos } };
   },
+  // delete_sale (063): só dono/gerente; devolve estoque e apaga tudo da venda numa chamada.
+  delete_sale: (a, db) => {
+    const uid = db.currentUserId;
+    if (!uid) return { status: 401, body: { code: '42501', message: 'Faça login para excluir a venda.' } };
+    const storeId = db.activeStore[uid];
+    const role = db.members.find(m => m.storeId === storeId && m.userId === uid)?.role;
+    if (!db.user()?.isPlatformAdmin && role !== 'OWNER' && role !== 'MANAGER') {
+      return { status: 403, body: { code: '42501', message: 'Apenas dono ou gerente pode excluir vendas.' } };
+    }
+    const sale = db.table('sales').find(x => x.id === a.p_sale_id);
+    if (!sale) return { status: 404, body: { code: 'P0002', message: 'Venda não encontrada.' } };
+    let estoque = 0;
+    const items = db.table('sale_items').filter(i => i.sale_id === sale.id);
+    for (const it of items) {
+      const prod = db.table('products').find(p => p.id === it.product_id);
+      if (prod && !it.by_order) {
+        prod.quantity = Number(prod.quantity) + Number(it.quantity);
+        db.table('stock_movements').push({ id: uuid(), product_id: prod.id, quantity: Number(it.quantity), type: 'RETURN' });
+        estoque += 1;
+      }
+    }
+    const before = db.table('transactions').length;
+    db.tables.transactions = db.table('transactions').filter(t => t.sale_id !== sale.id);
+    db.tables.sale_items = db.table('sale_items').filter(i => i.sale_id !== sale.id);
+    db.tables.sales = db.table('sales').filter(x => x.id !== sale.id);
+    return { body: { sale_id: sale.id, estoque_devolvido: estoque, lancamentos: before - db.table('transactions').length, itens: items.length, ordens_producao: 0, entregas: 0, encomendas: 0 } };
+  },
   edit_sale_items: () => ({ body: null }),
   start_self_trial: () => ({ body: null }),
 };
@@ -429,6 +456,8 @@ export const installSupabaseMock = async (page: Page, db: MockDb) => {
         return json(route, 200, wantsObject ? updated[0] ?? null : updated);
       }
       if (method === 'DELETE') {
+        // 063: DELETE direto em sales negado para todos os papéis (só pela RPC delete_sale).
+        if (table === 'sales') return json(route, 403, { code: '42501', message: 'permission denied for table sales' });
         db.tables[table] = rows.filter(r => !match(r));
         return json(route, 200, []);
       }

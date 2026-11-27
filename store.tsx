@@ -501,10 +501,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // --- RECURRENCE CHECK FOR FIXED ACCOUNTS ---
   useEffect(() => {
-    if (isInitialized && data.transactions.length > 0) {
+    // isManager entra na dependência: se o papel chegar depois da carga, a recorrência roda para o dono/gerente.
+    if (isInitialized && isManager && data.transactions.length > 0) {
       checkRecurringFixedAccounts(data.transactions);
     }
-  }, [isInitialized]);
+  }, [isInitialized, isManager]);
 
   const checkRecurringFixedAccounts = async (currentTransactions: Transaction[]) => {
     // Lançamentos recorrentes são do dono/gerente: o vendedor não insere em transactions (059).
@@ -1287,89 +1288,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   };
 
+  /**
+   * Exclusão de venda numa transação só no servidor (RPC delete_sale, migração 063):
+   * devolve o estoque, grava o estorno e apaga lançamentos, itens, OS, entregas, encomendas e a venda.
+   * Nada é apagado nem devolvido no cliente; o estado local só muda depois do sucesso (recarga).
+   */
   const deleteSale = async (id: string) => {
-    // O banco só permite que dono/gerente exclua vendas. Barrar aqui evita
-    // devolver o estoque de uma venda que o banco não vai apagar.
     if (!isManager) {
       addNotification('Apenas dono ou gerente pode excluir vendas.', 'error');
       return;
     }
-    console.log('📦 STORE: Iniciando exclusão definitiva no banco:', id);
-    try {
-      // 0. FETCH ITEMS TO RESTORE STOCK (Before Deletion)
-      const { data: saleItems } = await supabase.from('sale_items').select('*').eq('sale_id', id);
-
-      if (saleItems) {
-        const stockWorking = new Map<string, Product>();
-        for (const item of saleItems) {
-          // Restore stock ONLY if it was NOT made to order (i.e. taken from stock)
-          if (!item.by_order && item.product_id) {
-            const product = stockWorking.get(item.product_id) ?? data.products.find((p: Product) => p.id === item.product_id);
-            if (product) {
-              const restoredVariants = item.variant_id && product.variants
-                ? product.variants.map(v => v.id === item.variant_id
-                  ? { ...v, quantity: v.quantity + item.quantity }
-                  : v)
-                : product.variants;
-              const restoredProduct: Product = {
-                ...product,
-                quantity: product.quantity + item.quantity,
-                variants: restoredVariants
-              };
-              stockWorking.set(item.product_id, restoredProduct);
-              await updateProduct(restoredProduct);
-              // Log return
-              addStockMovement({
-                id: getUUID(),
-                productId: item.product_id,
-                productName: item.product_name,
-                quantity: item.quantity, // Positive for return
-                type: 'RETURN',
-                date: formatBrazilDateTime(),
-                variantId: item.variant_id,
-                variantName: item.variant_name,
-                observations: `Estorno de Venda EXCLUÍDA #${id.slice(0, 4)}${item.variant_name ? ` - ${item.variant_name}` : ''}`
-              });
-            }
-          }
-        }
-      }
-
-      // 1. Limpeza agressiva no estado local para feedback imediato
-      setData((prev: any) => ({
-        ...prev,
-        sales: prev.sales.filter((s: Sale) => s.id !== id),
-        productionOrders: (prev.productionOrders || []).filter((o: ProductionOrder) => o.saleId !== id),
-        deliveries: (prev.deliveries || []).filter((d: Delivery) => d.saleId !== id),
-        orders: (prev.orders || []).filter((o: Order) => o.saleId !== id),
-        // Filter transactions for immediate UI update (matches description pattern)
-        transactions: prev.transactions.filter((t: Transaction) => !t.description.includes(id.slice(0, 4)))
-      }));
-
-      // 2. Remoção no Supabase
-      // Clean up linked transactions (using description pattern matching as fallback for now)
-      // Note: Ideal would be a sale_id column in transactions, but description match works for generated ones.
-      const { error: transError } = await supabase.from('transactions').delete().ilike('description', `%Venda #${id.slice(0, 4)}%`);
-      if (transError) console.error('Erro ao excluir transações vinculadas:', transError);
-
-      await supabase.from('sale_items').delete().eq('sale_id', id);
-      await supabase.from('production_orders').delete().eq('sale_id', id);
-      await supabase.from('deliveries').delete().eq('sale_id', id);
-      await supabase.from('orders').delete().eq('sale_id', id); // Remove linked Encomendas
-
-      const { error } = await supabase.from('sales').delete().eq('id', id);
-
-      if (error) {
-        console.error('❌ STORE: Erro ao deletar do Supabase:', error);
-        addNotification(`Erro no banco: ${error.message}`, 'error');
-      } else {
-        console.log('✅ STORE: Venda removida com sucesso!');
-        addNotification('Venda e produtos devolvidos ao estoque (se aplicável).', 'info');
-      }
-    } catch (err: any) {
-      console.error('⚠️ STORE: Falha crítica na exclusão:', err);
-      addNotification('Erro ao processar exclusão', 'error');
+    const { error } = await supabase.rpc('delete_sale', { p_sale_id: id });
+    if (error) {
+      console.error('❌ STORE: Erro ao excluir venda (delete_sale):', error);
+      addNotification(`Erro ao excluir venda: ${error.message}`, 'error');
+      return;
     }
+    await refreshData(true);
+    addNotification('Venda excluída e produtos devolvidos ao estoque (se aplicável).', 'info');
   };
 
   const addStockMovement = async (m: StockMovement) => {
